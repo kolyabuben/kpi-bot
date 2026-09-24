@@ -1,5 +1,5 @@
 // Telegram Bot for KPI Group ПІ-51
-// Live KPI Campus API + Subject Zoom Links + Real-time Kyiv Air Raid Alarm Monitor + Deadlines + DTEK Light Info
+// Live KPI Campus API + Subject Zoom Links + Real-time Kyiv Air Raid Alarm Monitor + Deadlines + DTEK Light Info (Vyshhorod 6.2)
 
 process.env.TZ = 'Europe/Kyiv';
 
@@ -37,10 +37,10 @@ if (APP_URL) {
     } catch (e) {
       console.error('Self-ping failed:', e.message);
     }
-  }, 10 * 60 * 1000); // Every 10 mins
+  }, 10 * 60 * 1000);
 }
 
-// Timezone Helper: Always get exact Europe/Kyiv time regardless of server location
+// Timezone Helper
 function getKyivDate() {
   const now = new Date();
   return new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' }));
@@ -291,7 +291,7 @@ function getAlarmBanner() {
   return '';
 }
 
-// Handlers for Schedule
+// Handlers
 async function handleToday(chatId) {
   const kpiTime = await getCurrentKpiTime();
   const dayInfo = DAY_NAMES[kpiTime.currentDay] || { full: 'Сьогодні' };
@@ -301,7 +301,7 @@ async function handleToday(chatId) {
   const banner = getAlarmBanner();
 
   if (!pairs || pairs.length === 0) {
-    return sendMessage(chatId, `📅 *Сьогодні ${dayInfo.full}* (${kpiTime.currentWeek}-й тиждень, ${dateStr})\n\n🎉 *Пар немає! Можна чілити, босс!* 😎${banner}`);
+    return sendMessage(chatId, `📅 *Сьогодні ${dayInfo.full}* (${kpiTime.currentWeek}-й тиждень, ${dateStr})\n\n🎉 *Пар немає! Можна відпочивати.*${banner}`);
   }
 
   const list = pairs.map((p, i) => formatPair(p, i + 1)).join('\n\n');
@@ -322,7 +322,7 @@ async function handleTomorrow(chatId) {
   const pairs = await getDaySchedule(nextDay, nextWeek, dateStr);
 
   if (!pairs || pairs.length === 0) {
-    return sendMessage(chatId, `⏭ *Завтра ${dayInfo.full}* (${nextWeek}-й тиждень, ${dateStr})\n\n🎉 *Завтра пар немає!* Відпочивай, босс.`);
+    return sendMessage(chatId, `⏭ *Завтра ${dayInfo.full}* (${nextWeek}-й тиждень, ${dateStr})\n\n🎉 *Завтра пар немає!* Відпочивай.`);
   }
 
   const list = pairs.map((p, i) => formatPair(p, i + 1)).join('\n\n');
@@ -476,7 +476,6 @@ async function handleShowDeadlines(chatId) {
     );
   }
 
-  // Sort deadlines by date
   deadlines.sort((a, b) => a.date.localeCompare(b.date));
 
   let text = `📝 *Список активних дедлайнів та лаб (ПІ-51):*\n\n`;
@@ -502,14 +501,13 @@ async function handleShowDeadlines(chatId) {
 }
 
 async function handleAddDeadline(chatId, text, userName) {
-  // Matches: /add 29.09 Text or /task 2026-09-29 Text or /add 29.09.2026 Text
   const regex = /^\/(?:add|task)\s+(\d{1,2})[\.\/-](\d{1,2})(?:[\.\/-](\d{2,4}))?\s+(.+)$/i;
   const match = text.match(regex);
 
   if (!match) {
     return sendMessage(
       chatId,
-      `⚠️ *Неправильний формат команди, босс!*\n\n` +
+      `⚠️ *Неправильний формат команди!*\n\n` +
       `Пиши так:\n` +
       `👉 \`/add 29.09 Програмування: лаба №1\`\n` +
       `або з роком:\n` +
@@ -566,19 +564,21 @@ async function handleDeleteDeadline(chatId, text) {
   const removed = deadlines.splice(idx, 1)[0];
   saveDeadlines(deadlines);
 
-  return sendMessage(chatId, `🎉 *Завдання виконано і видалено!* ✅\n\n*${removed.title}*\nКрасава, босс! Минус один дедлайн! 💪`);
+  return sendMessage(chatId, `🎉 *Завдання виконано і видалено!* ✅\n\n*${removed.title}*\nМінус один дедлайн! Завдання закрито.`);
 }
 
-// Light & DTEK Info Handler
+// Light & DTEK Info Handler for Vyshhorod (Line 6.2)
 async function handleLight(chatId) {
   const text = 
-    `⚡ *Графік відключень світла (Київ / ДТЕК / YASNO):*\n\n` +
-    `💡 У Києві діють стабілізаційні графіки за **6 групами (чергами)**.\n\n` +
-    `🔗 *Офіційні графіки за твоєю адресою:*\n` +
-    `👉 [Перевірити графік на сайті ДТЕК Київ](https://www.dtek-kem.com.ua/ua/shutdowns)\n` +
-    `👉 [Бот YASNO для перевірки черги](https://t.me/YasnoOnlineBot)\n\n` +
-    `🏢 *Гуртожитки та корпуса КПИ:* більшість розташовані в **1-й** та **2-й** чергах ДТЕК.\n\n` +
-    `📌 _Порада: збережи свою групу в боті YASNO, щоб отримувати прямі пуші про відключення на твоїй вулиці!_`;
+    `⚡ *Графік відключень світла — м. Вишгород (Черга 6.2):*\n\n` +
+    `📍 *Локація:* м. Вишгород (Київська обл.)\n` +
+    `🏷 *Твоя лінія / черга:* **6.2** (ДТЕК Київські регіональні електромережі)\n\n` +
+    `🔗 *Офіційні ресурси перевірки відключень у реальному часі:*\n` +
+    `👉 [Перевірити графік на сайті ДТЕК КРЕМ (Вишгород)](https://www.dtek-krem.com.ua/ua/shutdowns)\n` +
+    `👉 [Чат-бот ДТЕК КРЕМ у Telegram](https://t.me/DTEKKyivRegionElektromerezhiBot)\n` +
+    `👉 [Чат-бот ДТЕК КРЕМ у Viber](https://chats.viber.com/dtekkyivregionelektromerezhi)\n\n` +
+    `📞 *Кол-центр ДТЕК КРЕМ:* \`0800 400 740\` або \`(067) 495 70 40\`\n\n` +
+    `💡 _Підказка: У боті ДТЕК КРЕМ введи назву міста "Вишгород", свою вулицю і будинок — і він надсилатиме тобі прямі пуші про відключення саме твоєї черги 6.2!_`;
 
   return sendMessage(chatId, text);
 }
@@ -596,7 +596,7 @@ async function monitorAirRaid() {
     if (status.isActive) {
       console.log('🚨 AIR RAID ALARM STARTED IN KYIV!');
       const msg = 
-        `🚨 *УВАГА, БОСС! ПОВІТРЯНА ТРИВОГА У КИЄВІ!* 🚨\n\n` +
+        `🚨 *УВАГА! ПОВІТРЯНА ТРИВОГА У КИЄВІ!* 🚨\n\n` +
         `⏰ Час початку: *${timeStr}*\n\n` +
         `⚠️ *За правилами КПІ пари призупинено!* Навчальний процес під час тривоги не проводиться.\n` +
         `Перейди в укриття та бережи себе! 🛡`;
@@ -621,7 +621,7 @@ async function monitorAirRaid() {
   lastKyivAlarmChanged = status.changed;
 }
 
-// Background scheduler for pair notifications and morning digest
+// Background scheduler
 let alertedToday = new Set();
 let morningDigestSentDay = null;
 
@@ -650,7 +650,6 @@ async function checkAndSendPairAlerts() {
     const list = pairs.map((p, i) => formatPair(p, i + 1)).join('\n\n');
     const banner = getAlarmBanner();
 
-    // Check deadlines due soon (<= 3 days)
     deadlines = loadDeadlines();
     const upcomingDeadlines = deadlines.filter(d => {
       const diff = getDaysDiff(d.date);
@@ -666,7 +665,7 @@ async function checkAndSendPairAlerts() {
       }).join('\n');
     }
 
-    const msg = `🌅 *Доброго ранку, босс!*\n\nСьогодні *${dayInfo.full}* (${kpiTime.currentWeek}-й тиждень, ${todayDateStr}).\nОсь твій розклад на сьогодні:\n\n${list}${banner}${deadlinesSection}\n\nУспішного дня! 🚀`;
+    const msg = `🌅 *Доброго ранку!*\n\nСьогодні *${dayInfo.full}* (${kpiTime.currentWeek}-й тиждень, ${todayDateStr}).\nОсь твій розклад на сьогодні:\n\n${list}${banner}${deadlinesSection}\n\nУспішного дня! 🚀`;
     for (const chatId of subIds) {
       await sendMessage(chatId, msg);
     }
@@ -684,10 +683,10 @@ async function checkAndSendPairAlerts() {
       
       let alarmWarning = '';
       if (lastKyivAlarmState === true) {
-        alarmWarning = `\n\n🚨 *ЗВЕРНИ УВАГУ:* У Києві зараз триває повітряна тривога! За правилами пари не проводяться, уточни у викладача/старости чи буде пара.`;
+        alarmWarning = `\n\n🚨 *ЗВЕРНИ УВАГУ:* У Києві зараз триває повітряна тривога! За правилами пари не проводяться, уточни у викладача чи буде пара.`;
       }
 
-      const msg = `🔔 *Босс, через 15 хвилин пара!*\n\n${formatPair(pair)}${alarmWarning}\n\nНе запізнюйся! ⚡`;
+      const msg = `🔔 *Через 15 хвилин пара!*\n\n${formatPair(pair)}${alarmWarning}\n\nНе запізнюйся! ⚡`;
       for (const chatId of subIds) {
         await sendMessage(chatId, msg);
       }
@@ -712,7 +711,7 @@ async function pollUpdates() {
 
         const chatId = update.message.chat.id;
         const text = update.message.text.trim();
-        const from = update.message.from?.first_name || 'Босс';
+        const from = update.message.from?.first_name || 'Студент';
 
         if (!subscribers[chatId]) {
           subscribers[chatId] = {
@@ -728,12 +727,12 @@ async function pollUpdates() {
         if (text === '/start') {
           await sendMessage(
             chatId,
-            `👋 *Привіт, босс!*\n\nЯ твій персональний помічник по розкладу для групи *ПІ-51*.\n\n` +
+            `👋 *Привіт!*\n\nЯ персональний помічник по розкладу для групи *ПІ-51*.\n\n` +
             `✅ Автоматичний розклад з офіційного сервера КПІ (Campus)\n` +
             `⏰ Нагадування за *15 хвилин* до кожної пари з Zoom-посиланням\n` +
             `🚨 *Моніторинг повітряних тривог Києва* у реальному часі\n` +
             `📝 *Трекер дедлайнів по лабам* (\`/add 29.09 Назва\`)\n` +
-            `⚡ *Графіки відключення світла* (ДТЕК/YASNO)\n` +
+            `⚡ *Графік світла* (м. Вишгород, черга 6.2)\n` +
             `🌅 Ранковий дайджест о 07:45 зі списком пар та дедлайнів!\n\n` +
             `Тисни на кнопки внизу для перевірки! 👇`
           );
@@ -769,7 +768,7 @@ async function pollUpdates() {
           const status = !current ? 'увімкнено 🔔' : 'вимкнено 🔕';
           await sendMessage(chatId, `Статус автоматичних нагадувань: *${status}*`);
         } else {
-          await sendMessage(chatId, `Не зовсім зрозумів команду, босс. Скористайся кнопками внизу! 👇`);
+          await sendMessage(chatId, `Не зовсім зрозумів команду. Скористайся кнопками внизу! 👇`);
         }
       }
     }
