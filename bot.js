@@ -24,6 +24,7 @@ const GROUP_ID = '5255';
 const SUBSCRIBERS_FILE = path.join(__dirname, 'subscribers.json');
 const LINKS_FILE = path.join(__dirname, 'links.json');
 const DEADLINES_FILE = path.join(__dirname, 'deadlines.json');
+const RSO_FILE = path.join(__dirname, 'rso.json');
 
 // Built-in HTTP server for cloud platforms (Render, Koyeb, Railway)
 const PORT = process.env.PORT || 3000;
@@ -141,6 +142,28 @@ function saveSubscribers(subs) {
 }
 
 let subscribers = loadSubscribers();
+ 
+// RSO Manager (Grade Points)
+function loadRso() {
+  try {
+    if (fs.existsSync(RSO_FILE)) {
+      return JSON.parse(fs.readFileSync(RSO_FILE, 'utf-8'));
+    }
+  } catch (err) {
+    console.error('Error loading rso.json:', err);
+  }
+  return {};
+}
+
+function saveRso(data) {
+  try {
+    fs.writeFileSync(RSO_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving rso.json:', err);
+  }
+}
+
+let rsoData = loadRso();
 
 // Real-time Air Raid Alarm in Kyiv
 let lastKyivAlarmState = null;
@@ -276,7 +299,8 @@ const KEYBOARD = {
     [{ text: '📅 Сьогодні' }, { text: '⏭ Завтра' }],
     [{ text: '🗓 Цей тиждень' }, { text: '🗓 Наступний тиждень' }],
     [{ text: '⏰ Що зараз?' }, { text: '🚨 Статус тривоги' }],
-    [{ text: '📝 Дедлайни' }, { text: '⚡ Графік світла' }],
+    [{ text: '📝 Дедлайни' }, { text: '📊 Бали РСО' }],
+    [{ text: '🧮 Калькулятор' }, { text: '⚡ Графік світла' }],
     [{ text: '🔗 Всі посилання' }, { text: '🔔 Сповіщення' }],
   ],
   resize_keyboard: true,
@@ -622,6 +646,382 @@ async function handleDeleteDeadline(chatId, text, fromUser) {
   }
 }
 
+// --- RSO Grade Points & Calculator Module ---
+
+function renderProgressBar(score, max = 100) {
+  const totalBars = 10;
+  const ratio = Math.max(0, Math.min(1, score / max));
+  const filledBars = Math.round(ratio * totalBars);
+  const emptyBars = totalBars - filledBars;
+  let fillChar = '🟩';
+  if (score < 60) fillChar = '🟧';
+  else if (score < 75) fillChar = '🟨';
+  else if (score >= 95) fillChar = '🟦';
+  return fillChar.repeat(filledBars) + '⬜'.repeat(emptyBars);
+}
+
+function getEctsGrade(score) {
+  if (score >= 95) return { letter: 'A', title: 'Відмінно (Автомат)', icon: '🏆' };
+  if (score >= 85) return { letter: 'B', title: 'Дуже добре', icon: '✨' };
+  if (score >= 75) return { letter: 'C', title: 'Добре', icon: '👍' };
+  if (score >= 65) return { letter: 'D', title: 'Задовільно', icon: '👌' };
+  if (score >= 60) return { letter: 'E', title: 'Достатньо (Залік/Допуск)', icon: '🟢' };
+  return { letter: 'Fx', title: 'Недопуск / Незадовільно', icon: '🔴' };
+}
+
+function normalizeSubject(input) {
+  if (!input) return 'Інший предмет';
+  const low = input.toLowerCase().trim();
+  if (low.includes('прог') || low.includes('обчисл') || low.includes('код') || low.includes('it')) {
+    return '💻 Обчислювальна техніка та програмування';
+  }
+  if (low.includes('спец') || low.includes('спвм')) {
+    return '📊 Спец. питання вищої математики';
+  }
+  if (low.includes('сигнал') || low.includes('теск') || low.includes('кіл') || low.includes('схем')) {
+    return '⚡ Теорія сигналів і кіл (ТЕСК)';
+  }
+  if (low.includes('мат') || low.includes('матан') || low.includes('аналіз')) {
+    return '📐 Вища математика (Мат. аналіз)';
+  }
+  if (low.includes('філос') || low.includes('филос')) {
+    return '📜 Вступ до філософії';
+  }
+  if (low.includes('псих')) {
+    return '🧠 Психологія';
+  }
+  if (low.includes('англ') || low.includes('eng')) {
+    return '🇬🇧 Англійська мова';
+  }
+  return input.trim().charAt(0).toUpperCase() + input.trim().slice(1);
+}
+
+// Safe Math Expression Evaluator
+function evaluateMath(str) {
+  let s = str.replace(/\s+/g, '').replace(/,/g, '.').replace(/×/g, '*').replace(/÷/g, '/').toLowerCase();
+  let pos = 0;
+  function peek() { return s[pos]; }
+  function get() { return s[pos++]; }
+  function parseExpr() {
+    let val = parseTerm();
+    while (pos < s.length && (peek() === '+' || peek() === '-')) {
+      const op = get();
+      const right = parseTerm();
+      val = op === '+' ? val + right : val - right;
+    }
+    return val;
+  }
+  function parseTerm() {
+    let val = parsePower();
+    while (pos < s.length && (peek() === '*' || peek() === '/' || peek() === '%')) {
+      const op = get();
+      const right = parsePower();
+      if (op === '*') val *= right;
+      else if (op === '/') {
+        if (right === 0) throw new Error('Ділення на нуль неможливе');
+        val /= right;
+      }
+      else val %= right;
+    }
+    return val;
+  }
+  function parsePower() {
+    let val = parseFactor();
+    if (pos < s.length && (peek() === '^' || (s.substr(pos, 2) === '**'))) {
+      if (peek() === '^') get(); else { get(); get(); }
+      const right = parsePower();
+      val = Math.pow(val, right);
+    }
+    return val;
+  }
+  function parseFactor() {
+    if (pos >= s.length) throw new Error('Неочікуваний кінець виразу');
+    if (peek() === '+') { get(); return parseFactor(); }
+    if (peek() === '-') { get(); return -parseFactor(); }
+    if (peek() === '(') {
+      get();
+      const val = parseExpr();
+      if (get() !== ')') throw new Error('Пропущена закриваюча дужка )');
+      return val;
+    }
+    const alphaMatch = s.slice(pos).match(/^[a-z]+/);
+    if (alphaMatch) {
+      const name = alphaMatch[0];
+      pos += name.length;
+      if (name === 'pi') return Math.PI;
+      if (name === 'e') return Math.E;
+      if (peek() === '(') {
+        get();
+        const arg = parseExpr();
+        if (get() !== ')') throw new Error(`Пропущена закриваюча дужка після ${name}`);
+        if (name === 'sqrt') return Math.sqrt(arg);
+        if (name === 'abs') return Math.abs(arg);
+        if (name === 'round') return Math.round(arg);
+        if (name === 'floor') return Math.floor(arg);
+        if (name === 'ceil') return Math.ceil(arg);
+        if (name === 'sin') return Math.sin(arg);
+        if (name === 'cos') return Math.cos(arg);
+        if (name === 'tan') return Math.tan(arg);
+        if (name === 'log' || name === 'ln') return Math.log(arg);
+        if (name === 'log10') return Math.log10(arg);
+        throw new Error(`Невідома функція: ${name}`);
+      }
+      throw new Error(`Невідомий ідентифікатор: ${name}`);
+    }
+    const numMatch = s.slice(pos).match(/^[0-9]+(\.[0-9]+)?/);
+    if (!numMatch) throw new Error(`Очікувалось число: ${s.slice(pos)}`);
+    pos += numMatch[0].length;
+    return parseFloat(numMatch[0]);
+  }
+  const result = parseExpr();
+  if (pos < s.length) throw new Error(`Невідомий символ: ${s[pos]}`);
+  return result;
+}
+
+function isPureMathExpr(text) {
+  const t = text.trim();
+  if (t.length < 3) return false;
+  if (/^\d{1,2}\.\d{1,2}(\.\d{2,4})?$/.test(t)) return false;
+  const isPure = /^[0-9\s\+\-\*\/\^\(\)\.\,\%]+$/.test(t);
+  const hasDigit = /[0-9]/.test(t);
+  const hasOp = /[\+\-\*\/\^]/.test(t);
+  return isPure && hasDigit && hasOp;
+}
+
+async function handleRso(chatId) {
+  rsoData = loadRso();
+  const userScores = rsoData[chatId];
+
+  if (!userScores || Object.keys(userScores).length === 0) {
+    return sendMessage(
+      chatId,
+      `📊 *Калькулятор балів РСО (Рейтингова система КПІ)*\n\n` +
+      `У тебе поки що немає збережених балів. Ти можеш легко фіксувати бали за лаби, тести та контрольні!\n\n` +
+      `📌 *Як додати бали:*\n` +
+      `\`/rso_add <предмет> <бали> [опис]\`\n\n` +
+      `💡 *Приклади для групи ПІ-51:*\n` +
+      `• \`/rso_add прог 15 Лабораторна 1\`\n` +
+      `• \`/rso_add матан 20 Контрольна робота\`\n` +
+      `• \`/rso_add спец 12 Практикум\`\n` +
+      `• \`/rso_add теск 10 Лаба з кіл\`\n` +
+      `• \`/rso_add англ 15 Модульний тест\`\n\n` +
+      `🎯 *Швидкий розрахунок цілей:*\n` +
+      `\`/rso_calc [поточні_бали]\` (наприклад: \`/rso_calc 45\`)\n\n` +
+      `_Бот підрахує твій прогрес та покаже, скільки лишилося до заліку (60 б.) чи автомату (95 б.)!_`
+    );
+  }
+
+  let text = `📊 *Твої бали РСО (Рейтингова система КПІ):*\n\n`;
+  let totalScore = 0;
+  let count = 0;
+
+  for (const [subjName, data] of Object.entries(userScores)) {
+    const score = data.score || 0;
+    totalScore += score;
+    count++;
+    const grade = getEctsGrade(score);
+    const bar = renderProgressBar(score);
+
+    text += `*${subjName}*\n`;
+    text += `   ${bar} *${score} / 100 б.* (${grade.icon} ${grade.title})\n`;
+
+    if (score >= 95) {
+      text += `   🏆 *Оцінка «Відмінно» (Автомат) досягнута!*\n`;
+    } else if (score >= 60) {
+      text += `   ✅ *Залік складено!* До автомату (95 б.): ще *+${(95 - score).toFixed(1)} б.*\n`;
+    } else {
+      text += `   🟢 До заліку / допуску (60 б.): ще *+${(60 - score).toFixed(1)} б.*\n`;
+      text += `   👍 До «Добре» (75 б.): ще *+${(75 - score).toFixed(1)} б.*\n`;
+    }
+
+    if (data.items && data.items.length > 0) {
+      const recent = data.items.slice(-3).map(it => `${it.title} (+${it.points})`).join(', ');
+      text += `   📝 _Історія:_ ${recent}\n`;
+    }
+    text += `\n`;
+  }
+
+  const avg = (totalScore / count).toFixed(1);
+  text += `📈 *Середній рейтинг по предметах:* *${avg} / 100 б.*\n\n`;
+  text += `━━━━━━━━━━━━━━━━━━━━\n`;
+  text += `➕ *Додати бали:* \`/rso_add [предмет] [бал] [опис]\`\n`;
+  text += `🎯 *Розрахувати ціль:* \`/rso_calc [бал]\`\n`;
+  text += `🗑 *Скинути предмет:* \`/rso_reset [предмет]\` (або \`/rso_reset все\`)`;
+
+  return sendMessage(chatId, text);
+}
+
+async function handleAddRso(chatId, text) {
+  const raw = text.replace(/^\/rso_add\s+/i, '').trim();
+  if (!raw) {
+    return sendMessage(
+      chatId,
+      `⚠️ Вкажи дані у форматі:\n\`/rso_add [предмет] [бал] [опис]\`\n\nПриклад:\n\`/rso_add прог 15 Лабораторна 1\``
+    );
+  }
+
+  const tokens = raw.split(/\s+/);
+  let pointsIdx = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    if (/^[0-9]+([.,][0-9]+)?$/.test(tokens[i])) {
+      pointsIdx = i;
+      break;
+    }
+  }
+
+  if (pointsIdx === -1) {
+    return sendMessage(
+      chatId,
+      `⚠️ Не вдалося знайти кількість балів. Вкажи число, наприклад:\n\`/rso_add прог 15 Лаба 1\``
+    );
+  }
+
+  const points = parseFloat(tokens[pointsIdx].replace(',', '.'));
+  const subjectRaw = tokens.slice(0, pointsIdx).join(' ');
+  const desc = tokens.slice(pointsIdx + 1).join(' ') || 'Додано бали';
+
+  if (!subjectRaw) {
+    return sendMessage(chatId, `⚠️ Вкажи назву предмета, наприклад:\n\`/rso_add прог 15 Лаба 1\``);
+  }
+
+  const subject = normalizeSubject(subjectRaw);
+  rsoData = loadRso();
+
+  if (!rsoData[chatId]) {
+    rsoData[chatId] = {};
+  }
+  if (!rsoData[chatId][subject]) {
+    rsoData[chatId][subject] = { score: 0, items: [] };
+  }
+
+  rsoData[chatId][subject].score = Math.round((rsoData[chatId][subject].score + points) * 10) / 10;
+  rsoData[chatId][subject].items.push({
+    points,
+    title: desc,
+    date: getTodayDateStr(0),
+  });
+  saveRso(rsoData);
+
+  const curScore = rsoData[chatId][subject].score;
+  const grade = getEctsGrade(curScore);
+  const bar = renderProgressBar(curScore);
+
+  let progressText = '';
+  if (curScore >= 95) {
+    progressText = `🏆 *Вітаю! Автомат / Відмінно гарантовано!*`;
+  } else if (curScore >= 60) {
+    progressText = `✅ *Залік складено!* До автомату (95 б.) лишилося: *+${(95 - curScore).toFixed(1)} б.*`;
+  } else {
+    progressText = `⏳ До заліку / допуску (60 б.) лишилося: *+${(60 - curScore).toFixed(1)} б.*`;
+  }
+
+  return sendMessage(
+    chatId,
+    `✅ *Бали успішно додано!* 📈\n\n` +
+    `Предмет: *${subject}*\n` +
+    `За що: *${desc}* (+${points} б.)\n\n` +
+    `📊 *Поточний результат:* ${bar} *${curScore} / 100 б.*\n` +
+    `Рівень: *${grade.icon} ${grade.title} (${grade.letter})*\n` +
+    `${progressText}\n\n` +
+    `_Переглянути всі предмети:_ \`/rso\``
+  );
+}
+
+async function handleDelRso(chatId, text) {
+  const raw = text.replace(/^\/(?:rso_del|rso_reset)\s*/i, '').trim();
+  if (!raw) {
+    return sendMessage(chatId, `⚠️ Вкажи предмет для скидання:\n\`/rso_reset прог\` або \`/rso_reset все\``);
+  }
+
+  rsoData = loadRso();
+  if (!rsoData[chatId] || Object.keys(rsoData[chatId]).length === 0) {
+    return sendMessage(chatId, `ℹ️ У тебе немає збережених балів для видалення.`);
+  }
+
+  if (raw.toLowerCase() === 'все' || raw.toLowerCase() === 'all') {
+    delete rsoData[chatId];
+    saveRso(rsoData);
+    return sendMessage(chatId, `🗑 *Всі бали РСО повністю очищено!*`);
+  }
+
+  const norm = normalizeSubject(raw);
+  const existingKey = Object.keys(rsoData[chatId]).find(k => k === norm || k.toLowerCase().includes(raw.toLowerCase()));
+
+  if (!existingKey) {
+    return sendMessage(chatId, `❌ Предмет *${raw}* не знайдено серед твоїх записів.`);
+  }
+
+  delete rsoData[chatId][existingKey];
+  saveRso(rsoData);
+  return sendMessage(chatId, `🗑 *Бали для предмету "${existingKey}" скинуто!*`);
+}
+
+async function handleRsoCalc(chatId, text) {
+  const raw = text.replace(/^\/rso_calc\s*/i, '').trim();
+  const num = parseFloat(raw.replace(',', '.'));
+  if (isNaN(num)) {
+    return sendMessage(
+      chatId,
+      `🎯 *Калькулятор цілей РСО*\n\nВкажи свій поточний бал:\n\`/rso_calc 45\`\n\nБот розрахує точну кількість балів, якої не вистачає до кожної оцінки!`
+    );
+  }
+
+  const score = Math.max(0, Math.min(100, num));
+  const grade = getEctsGrade(score);
+  const bar = renderProgressBar(score);
+
+  let to60 = score >= 60 ? '✅ Досягнуто (Залік є!)' : `⏳ Потрібно ще *+${(60 - score).toFixed(1)} б.*`;
+  let to75 = score >= 75 ? '✅ Досягнуто (Оцінка Добре)' : `⏳ Потрібно ще *+${(75 - score).toFixed(1)} б.*`;
+  let to85 = score >= 85 ? '✅ Досягнуто (Дуже добре)' : `⏳ Потрібно ще *+${(85 - score).toFixed(1)} б.*`;
+  let to95 = score >= 95 ? '🏆 Досягнуто (Автомат / Відмінно!)' : `⏳ Потрібно ще *+${(95 - score).toFixed(1)} б.*`;
+
+  return sendMessage(
+    chatId,
+    `🎯 *Розрахунок цілей РСО для балу ${score}:*\n\n` +
+    `${bar} *${score} / 100 б.*\n` +
+    `Поточний статус: *${grade.icon} ${grade.title} (${grade.letter})*\n\n` +
+    `• 🟢 *До заліку / допуску (60 б.):*\n   ${to60}\n` +
+    `• 👍 *До оцінки «Добре» (75 б., C):*\n   ${to75}\n` +
+    `• ✨ *До оцінки «Дуже добре» (85 б., B):*\n   ${to85}\n` +
+    `• 🏆 *До «Автомату / Відмінно» (95 б., A):*\n   ${to95}`
+  );
+}
+
+async function handleCalc(chatId, text) {
+  let expr = text.replace(/^\/calc\s*/i, '').trim();
+  if (text === '🧮 Калькулятор') {
+    expr = '';
+  }
+
+  if (!expr) {
+    return sendMessage(
+      chatId,
+      `🧮 *Калькулятор:*\n\n` +
+      `Можна проводити звичайні та інженерні математичні обчислення, або рахувати бали РСО!\n\n` +
+      `🔢 *Швидкі обчислення:* \`/calc <вираз>\`\n` +
+      `• \`/calc 25 * 4 + 15 / 3\`\n` +
+      `• \`/calc sqrt(144) + 2^4\`\n` +
+      `• \`/calc (45 / 60) * 100\`\n` +
+      `• \`/calc sin(pi / 2)\`\n\n` +
+      `💡 _Можна навіть просто відправити математичний приклад типу \`15*4 + 20\`, бот його порахує!_\n\n` +
+      `📊 *Калькулятор балів РСО КПІ:*\n` +
+      `• Кнопка *«📊 Бали РСО»* або команда \`/rso\`\n` +
+      `• \`/rso_calc 48\` — скільки треба до автомату`
+    );
+  }
+
+  try {
+    const res = evaluateMath(expr);
+    let formatted = Number.isInteger(res) ? String(res) : String(Math.round(res * 10000) / 10000);
+    return sendMessage(
+      chatId,
+      `🧮 *Результат:* \`${expr}\` = *${formatted}*`
+    );
+  } catch (err) {
+    return sendMessage(chatId, `⚠️ Помилка у виразі: ${err.message}`);
+  }
+}
+
 // Light & DTEK Info Handler for Vyshhorod (Line 6.2)
 async function handleLight(chatId) {
   const text = 
@@ -806,6 +1206,8 @@ async function pollUpdates() {
             `⏰ Нагадування за *15 хвилин* до кожної пари з Zoom-посиланням\n` +
             `🚨 *Моніторинг повітряних тривог Києва* у реальному часі\n` +
             `📝 *Трекер дедлайнів по лабам* (\`/add 29.09 Назва\`)\n` +
+            `📊 *Калькулятор балів РСО КПІ* (\`/rso\` або \`/rso_add\`)\n` +
+            `🧮 *Інженерний калькулятор* (\`/calc 25*4\` або прямий вираз)\n` +
             `⚡ *Графік світла* (м. Вишгород, черга 6.2)\n` +
             `🌅 Ранковий дайджест о 07:45 зі списком пар та дедлайнів!\n\n` +
             `Тисни на кнопки внизу для перевірки! 👇`
@@ -831,6 +1233,18 @@ async function pollUpdates() {
           await handleAddDeadline(chatId, text, update.message.from);
         } else if (text.startsWith('/done') || text.startsWith('/del')) {
           await handleDeleteDeadline(chatId, text, update.message.from);
+        } else if (text === '📊 Бали РСО' || text === '/rso') {
+          await handleRso(chatId);
+        } else if (text.startsWith('/rso_add')) {
+          await handleAddRso(chatId, text);
+        } else if (text.startsWith('/rso_del') || text.startsWith('/rso_reset')) {
+          await handleDelRso(chatId, text);
+        } else if (text.startsWith('/rso_calc')) {
+          await handleRsoCalc(chatId, text);
+        } else if (text === '🧮 Калькулятор' || text === '/calc' || text.startsWith('/calc ')) {
+          await handleCalc(chatId, text);
+        } else if (isPureMathExpr(text)) {
+          await handleCalc(chatId, `/calc ${text}`);
         } else if (text === '⚡ Графік світла' || text === '/light') {
           await handleLight(chatId);
         } else if (text === '🔗 Всі посилання' || text === '/links') {
