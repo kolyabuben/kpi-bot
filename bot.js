@@ -168,7 +168,36 @@ let rsoData = loadRso();
 
 // Real-time Air Raid Alarm in Kyiv
 let lastKyivAlarmState = null;
-let lastKyivAlarmChanged = null;
+let lastKyivAlarmStartedAt = null;
+let lastKyivAlarmEndedAt = null;
+
+function formatKyivTime(date = getKyivDate()) {
+  const h = String(date.getHours()).padStart(2, '0');
+  const m = String(date.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+function parseAlarmChangedTime(changedStr) {
+  if (changedStr && typeof changedStr === 'string' && !changedStr.startsWith('1970') && !changedStr.startsWith('0000')) {
+    const parts = changedStr.split(' ');
+    if (parts.length >= 2 && parts[1].length >= 5) {
+      return parts[1].slice(0, 5);
+    }
+  }
+  return null;
+}
+
+function formatDurationMinutes(startMs, endMs) {
+  if (!startMs || !endMs || endMs <= startMs) return '';
+  const diffMinutes = Math.round((endMs - startMs) / 60000);
+  if (diffMinutes < 1) return 'менше 1 хв';
+  const hours = Math.floor(diffMinutes / 60);
+  const mins = diffMinutes % 60;
+  if (hours > 0) {
+    return `${hours} год ${mins} хв`;
+  }
+  return `${mins} хв`;
+}
 
 async function fetchKyivAlarm() {
   try {
@@ -467,19 +496,37 @@ async function handleAlarmStatus(chatId) {
     return sendMessage(chatId, `⚠️ Не вдалося отримати поточний статус тривог.`);
   }
 
+  const now = getKyivDate();
+  const currentKyivTime = formatKyivTime(now);
+
   if (status.isActive) {
-    const timeStr = status.changed ? status.changed.slice(11, 16) : 'нещодавно';
+    const apiTime = parseAlarmChangedTime(status.changed);
+    const timeStr = apiTime || (lastKyivAlarmStartedAt ? formatKyivTime(new Date(lastKyivAlarmStartedAt)) : currentKyivTime);
+
+    let durationText = '';
+    if (lastKyivAlarmStartedAt) {
+      const dur = formatDurationMinutes(lastKyivAlarmStartedAt, now.getTime());
+      if (dur) durationText = ` (триває вже ${dur})`;
+    }
+
     return sendMessage(
       chatId,
       `🚨 *У КИЄВІ ЗАРАЗ ПОВІТРЯНА ТРИВОГА!* 🚨\n\n` +
-      `⏰ Початок: *${timeStr}*\n` +
+      `⏰ Початок: *${timeStr}*${durationText}\n` +
       `⚠️ *За правилами КПІ навчання зупиняється!* Пари не проводяться до закінчення тривоги.\n\n` +
       `Перебувай у безпечному місці або укритті! 🛡`
     );
   } else {
+    let lastEndedInfo = '';
+    if (lastKyivAlarmEndedAt) {
+      const endedTime = formatKyivTime(new Date(lastKyivAlarmEndedAt));
+      lastEndedInfo = `⏰ Останній відбій: *${endedTime}*\n\n`;
+    }
+
     return sendMessage(
       chatId,
       `🟢 *У Києві спокійно, тривоги немає!* 🟢\n\n` +
+      lastEndedInfo +
       `Навчальний процес і пари тривають у звичайному режимі за розкладом. 🎓`
     );
   }
@@ -1064,10 +1111,15 @@ async function monitorAirRaid() {
     const subIds = Object.keys(subscribers).filter(id => subscribers[id].notifications !== false);
 
     if (lastKyivAlarmState !== null && lastKyivAlarmState !== status.isActive) {
-      const timeStr = status.changed ? status.changed.slice(11, 16) : 'зараз';
+      const now = getKyivDate();
+      const currentKyivTimeStr = formatKyivTime(now);
 
       if (status.isActive) {
+        lastKyivAlarmStartedAt = now.getTime();
         console.log('🚨 AIR RAID ALARM STARTED IN KYIV!');
+        const apiTime = parseAlarmChangedTime(status.changed);
+        const timeStr = apiTime || currentKyivTimeStr;
+
         const msg = 
           `🚨 *УВАГА! ПОВІТРЯНА ТРИВОГА У КИЄВІ!* 🚨\n\n` +
           `⏰ Час початку: *${timeStr}*\n\n` +
@@ -1078,10 +1130,24 @@ async function monitorAirRaid() {
           await sendMessage(chatId, msg);
         }
       } else {
+        const endedMs = now.getTime();
+        lastKyivAlarmEndedAt = endedMs;
         console.log('🟢 AIR RAID ALARM ENDED IN KYIV!');
+
+        const timeStr = currentKyivTimeStr;
+
+        let durationText = '';
+        if (lastKyivAlarmStartedAt) {
+          const dur = formatDurationMinutes(lastKyivAlarmStartedAt, endedMs);
+          if (dur) {
+            durationText = `\n⏱ Тривалість тривоги: *${dur}*`;
+          }
+          lastKyivAlarmStartedAt = null;
+        }
+
         const msg = 
           `🟢 *ВІДБІЙ ПОВІТРЯНОЇ ТРИВОГИ У КИЄВІ!* 🟢\n\n` +
-          `⏰ Час відбою: *${timeStr}*\n\n` +
+          `⏰ Час відбою: *${timeStr}*${durationText}\n\n` +
           `✅ Небезпека минула! Навчальний процес відновлюється за розкладом. 🎓`;
 
         for (const chatId of subIds) {
@@ -1091,7 +1157,6 @@ async function monitorAirRaid() {
     }
 
     lastKyivAlarmState = status.isActive;
-    lastKyivAlarmChanged = status.changed;
   } catch (err) {
     console.error('Error in monitorAirRaid:', err);
   }
@@ -1307,7 +1372,9 @@ tgRequest('deleteWebhook').then(() => {
 fetchKyivAlarm().then(st => {
   if (st) {
     lastKyivAlarmState = st.isActive;
-    lastKyivAlarmChanged = st.changed;
+    if (st.isActive) {
+      lastKyivAlarmStartedAt = Date.now();
+    }
     console.log(`Початковий статус тривоги у Києві: ${st.isActive ? '🚨 ТРИВОГА' : '🟢 ВІДБІЙ'}`);
   }
 });
