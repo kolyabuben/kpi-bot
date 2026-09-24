@@ -21,6 +21,7 @@ const __dirname = path.dirname(__filename);
 
 const TOKEN = process.env.BOT_TOKEN || '8866763001:AAEDnXFRytLSju4XJCuC34zbh_0y9YYkCnY';
 const GROUP_ID = '5255';
+const BOSS_ID = '1277111400';
 const SUBSCRIBERS_FILE = path.join(__dirname, 'subscribers.json');
 const LINKS_FILE = path.join(__dirname, 'links.json');
 const DEADLINES_FILE = path.join(__dirname, 'deadlines.json');
@@ -294,7 +295,7 @@ async function tgRequest(method, params = {}) {
   }
 }
 
-const KEYBOARD = {
+const BOSS_KEYBOARD = {
   keyboard: [
     [{ text: '📅 Сьогодні' }, { text: '⏭ Завтра' }],
     [{ text: '🗓 Цей тиждень' }, { text: '🗓 Наступний тиждень' }],
@@ -306,12 +307,32 @@ const KEYBOARD = {
   resize_keyboard: true,
 };
 
+const DEFAULT_KEYBOARD = {
+  keyboard: [
+    [{ text: '📅 Сьогодні' }, { text: '⏭ Завтра' }],
+    [{ text: '🗓 Цей тиждень' }, { text: '🗓 Наступний тиждень' }],
+    [{ text: '⏰ Що зараз?' }, { text: '🚨 Статус тривоги' }],
+    [{ text: '📝 Дедлайни' }, { text: '📊 Бали РСО' }],
+    [{ text: '🔗 Всі посилання' }, { text: '🚨 Режим SOS' }],
+    [{ text: '🔔 Сповіщення' }],
+  ],
+  resize_keyboard: true,
+};
+
+function getKeyboardForChat(chatId) {
+  if (String(chatId) === BOSS_ID) {
+    return BOSS_KEYBOARD;
+  }
+  return DEFAULT_KEYBOARD;
+}
+
 async function sendMessage(chatId, text, extra = {}) {
+  const keyboard = extra.reply_markup || getKeyboardForChat(chatId);
   return await tgRequest('sendMessage', {
     chat_id: chatId,
     text,
     parse_mode: 'Markdown',
-    reply_markup: extra.reply_markup || KEYBOARD,
+    reply_markup: keyboard,
     disable_web_page_preview: true,
   });
 }
@@ -1010,8 +1031,20 @@ async function handleSos(chatId) {
   return sendMessage(chatId, text);
 }
 
-// Light & DTEK Info Handler for Vyshhorod (Line 6.2)
+// Light & DTEK Info Handler
 async function handleLight(chatId) {
+  if (String(chatId) !== BOSS_ID) {
+    const publicText =
+      `⚡ *Графіки відключень світла ДТЕК:*\n\n` +
+      `🔗 *Офіційні ресурси перевірки графіків у реальному часі:*\n` +
+      `👉 [ДТЕК Київські електромережі (м. Київ)](https://www.dtek-kem.com.ua/ua/shutdowns)\n` +
+      `👉 [ДТЕК Київські регіональні електромережі (Область)](https://www.dtek-krem.com.ua/ua/shutdowns)\n` +
+      `👉 [Чат-бот ДТЕК КРЕМ у Telegram](https://t.me/DTEKKyivRegionElektromerezhiBot)\n` +
+      `👉 [Чат-бот ДТЕК КЕМ у Telegram](https://t.me/DTEKKyivskieElektromerezhibot)\n\n` +
+      `💡 _Обери свій населений пункт, вулицю та номер будинку у відповідному боті для отримання сповіщень про свою чергу!_`;
+    return sendMessage(chatId, publicText);
+  }
+
   const text = 
     `⚡ *Графік відключень світла — м. Вишгород (Черга 6.2):*\n\n` +
     `📍 *Локація:* м. Вишгород (Київська обл.)\n` +
@@ -1174,11 +1207,11 @@ async function pollUpdates() {
           };
           saveSubscribers(subscribers);
 
-          // Alert boss (1277111400) in real-time
-          if (String(chatId) !== '1277111400') {
+          // Alert boss in real-time
+          if (String(chatId) !== BOSS_ID) {
             const handle = uName ? ` (@${uName})` : '';
             sendMessage(
-              '1277111400',
+              BOSS_ID,
               `👋 *Новий користувач запустив бота!*\n\n👤 *${from}*${handle}\n🆔 ID: \`${chatId}\``
             ).catch(() => {});
           }
@@ -1187,6 +1220,8 @@ async function pollUpdates() {
         console.log(`[MSG from ${from} (${chatId})]: ${text}`);
 
         if (text === '/start') {
+          const isBoss = String(chatId) === BOSS_ID;
+          const lightLine = isBoss ? `⚡ *Графік світла* (м. Вишгород, черга 6.2)\n` : '';
           await sendMessage(
             chatId,
             `👋 *Привіт!*\n\nЯ персональний помічник по розкладу для групи *ПІ-51*.\n\n` +
@@ -1196,7 +1231,7 @@ async function pollUpdates() {
             `📝 *Трекер дедлайнів по лабам* (\`/add 29.09 Назва\`)\n` +
             `📊 *Калькулятор балів РСО КПІ* (\`/rso\` або \`/rso_add\`)\n` +
             `🚨 *Режим SOS / План виживання* (\`/sos\`) — порятунок від завалів\n` +
-            `⚡ *Графік світла* (м. Вишгород, черга 6.2)\n` +
+            lightLine +
             `🌅 Ранковий дайджест о 07:45 зі списком пар та дедлайнів!\n\n` +
             `Тисни на кнопки внизу для перевірки! 👇`
           );
