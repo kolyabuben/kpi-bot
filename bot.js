@@ -1,5 +1,5 @@
 // Telegram Bot for KPI Group ПІ-51
-// Powered by live KPI Campus API
+// Powered by live KPI Campus API + Subject Conference Links
 
 import fs from 'fs';
 import path from 'path';
@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const TOKEN = process.env.BOT_TOKEN || '8866763001:AAEDnXFRytLSju4XJCuC34zbh_0y9YYkCnY';
 const GROUP_ID = '5255';
 const SUBSCRIBERS_FILE = path.join(__dirname, 'subscribers.json');
+const LINKS_FILE = path.join(__dirname, 'links.json');
 
 // Built-in HTTP server for cloud platforms (Render, Koyeb, Railway)
 const PORT = process.env.PORT || 3000;
@@ -45,6 +46,40 @@ const DAY_NAMES = {
   6: { code: 'Сб', full: 'Субота' },
   7: { code: 'Нд', full: 'Неділя' },
 };
+
+// Load conference links
+function loadLinks() {
+  try {
+    if (fs.existsSync(LINKS_FILE)) {
+      return JSON.parse(fs.readFileSync(LINKS_FILE, 'utf-8'));
+    }
+  } catch (err) {
+    console.error('Error loading links.json:', err);
+  }
+  return [];
+}
+
+let conferenceLinks = loadLinks();
+
+function findLinkForPair(pair) {
+  if (!pair || !pair.name) return null;
+  const nameLower = pair.name.toLowerCase();
+  const typeLower = (pair.type || '').toLowerCase();
+
+  for (const item of conferenceLinks) {
+    const matchesKeyword = item.keywords.some(k => nameLower.includes(k.toLowerCase()));
+    if (matchesKeyword) {
+      if (item.type) {
+        if (typeLower.includes(item.type.toLowerCase())) {
+          return item;
+        }
+      } else {
+        return item;
+      }
+    }
+  }
+  return null;
+}
 
 // Load or initialize subscribers
 function loadSubscribers() {
@@ -104,14 +139,23 @@ async function getCurrentKpiTime() {
   }
 }
 
-// Format a single pair into readable text
+// Format a single pair into readable text with conference link
 function formatPair(pair, index) {
   const time = pair.time ? pair.time.slice(0, 5) : 'Час не вказано';
   const typeBadge = pair.type ? `[${pair.type}]` : '';
   const lecturer = pair.lecturer && pair.lecturer.name ? `👨‍🏫 ${pair.lecturer.name}` : '';
   const location = pair.location && pair.location.title ? `📍 Ауд. ${pair.location.title}` : '📍 Дистанційно';
   
-  return `*${index != null ? index + '. ' : ''}⏰ ${time}* ${typeBadge} *${pair.name}*\n   ${lecturer ? lecturer + '\n   ' : ''}${location}`;
+  const linkObj = findLinkForPair(pair);
+  let linkStr = '';
+  if (linkObj) {
+    linkStr = `\n   🔗 [👉 Підключитися до Zoom](${linkObj.url})`;
+    if (linkObj.passcode) {
+      linkStr += ` (Пароль: \`${linkObj.passcode}\`)`;
+    }
+  }
+
+  return `*${index != null ? index + '. ' : ''}⏰ ${time}* ${typeBadge} *${pair.name}*\n   ${lecturer ? lecturer + '\n   ' : ''}${location}${linkStr}`;
 }
 
 // Filter pairs that are active on a specific date (if dates array is specified)
@@ -170,7 +214,8 @@ const KEYBOARD = {
   keyboard: [
     [{ text: '📅 Сьогодні' }, { text: '⏭ Завтра' }],
     [{ text: '🗓 Цей тиждень' }, { text: '🗓 Наступний тиждень' }],
-    [{ text: '⏰ Що зараз?' }, { text: '🔔 Сповіщення' }],
+    [{ text: '⏰ Що зараз?' }, { text: '🔗 Всі посилання' }],
+    [{ text: '🔔 Сповіщення' }],
   ],
   resize_keyboard: true,
 };
@@ -301,6 +346,25 @@ async function handleNow(chatId) {
   return sendMessage(chatId, text);
 }
 
+async function handleAllLinks(chatId) {
+  if (conferenceLinks.length === 0) {
+    return sendMessage(chatId, `ℹ️ Список посилань наразі порожній.`);
+  }
+
+  let text = `🔗 *Посилання на пари Zoom/Meet (ПІ-51):*\n\n`;
+  conferenceLinks.forEach((item, idx) => {
+    text += `${idx + 1}. *${item.title}*\n`;
+    text += `   👉 [Підключитися до Zoom](${item.url})\n`;
+    if (item.passcode) {
+      text += `   🔑 Пароль: \`${item.passcode}\`\n`;
+    }
+    text += `\n`;
+  });
+
+  text += `_Збережи собі або просто тисни кнопку у меню!_ 🚀`;
+  return sendMessage(chatId, text);
+}
+
 // Background scheduler for notifications
 let alertedToday = new Set();
 let morningDigestSentDay = null;
@@ -390,6 +454,7 @@ async function pollUpdates() {
             `👋 *Привіт, босс!*\n\nЯ твій персональний помічник по розкладу для групи *ПІ-51*.\n\n` +
             `✅ Я автоматично підтягую актуальні дані з офіційного сервера КПІ (Campus).\n` +
             `⏰ Я пам'ятаю, який зараз тиждень (1 чи 2) і надішлю тобі нагадування за *15 хвилин* до кожної пари!\n` +
+            `🔗 Тепер прямо біля кожної пари є посилання на Zoom/Meet!\n` +
             `🌅 А щоранку о 07:45 пришлю повний список пар на день.\n\n` +
             `Тисни на кнопки внизу, щоб глянути розклад! 👇`
           );
@@ -406,6 +471,8 @@ async function pollUpdates() {
           await handleWeek(chatId, nextWeek);
         } else if (text === '⏰ Що зараз?' || text === '/now') {
           await handleNow(chatId);
+        } else if (text === '🔗 Всі посилання' || text === '/links') {
+          await handleAllLinks(chatId);
         } else if (text === '🔔 Сповіщення') {
           const current = subscribers[chatId]?.notifications !== false;
           subscribers[chatId].notifications = !current;
@@ -426,7 +493,7 @@ async function pollUpdates() {
 }
 
 // Start bot
-console.log('🚀 Бот розкладу ПІ-51 запущений!');
+console.log('🚀 Бот розкладу ПІ-51 запущений з підтримкою Zoom-посилань!');
 console.log('Зв\'язок з сервером KPI Campus налагоджено.');
 
 // Start background notification ticker (every 30 seconds)

@@ -1,0 +1,34 @@
+[
+  {
+    "keywords": ["обчислювальна", "програмування", "системного"],
+    "title": "Обчислювальна техніка та програмування",
+    "url": "https://us02web.zoom.us/j/88444480544?pwd=UTU4bWx6RHZGQUpBWHJudGs2Ym81Zz09",
+    "passcode": null
+  },
+  {
+    "keywords": ["спеціальні питання", "спец питання"],
+    "type": "Лек",
+    "title": "Спеціальні питання вищої математики (Лекції)",
+    "url": "https://us02web.zoom.us/j/81308958050?pwd=hmB11DhUF0YNxcBaPv38hvhL8zY8sg.1",
+    "passcode": null
+  },
+  {
+    "keywords": ["спеціальні питання", "спец питання"],
+    "type": "Прак",
+    "title": "Спеціальні питання вищої математики (Практика)",
+    "url": "https://us05web.zoom.us/j/88556783034?pwd=aDAzYzFMYkE5TUVaRkZZblpBV1dSUT09",
+    "passcode": null
+  },
+  {
+    "keywords": ["сигналів", "сигнали", "кіл"],
+    "title": "Теорія електричних сигналів і кіл",
+    "url": "https://us04web.zoom.us/j/99758493979?pwd%C3%92MrcWoxWWwyMitHTzdubENFSThEdz09",
+    "passcode": "5wKh8R"
+  },
+  {
+    "keywords": ["вища математика", "математичний аналіз"],
+    "title": "Вища математика (Математичний аналіз)",
+    "url": "https://us04web.zoom.us/j/6497495101?pwd=Y0wrL3dUb3QzZmpRdWUrSTVvd3JMdz09",
+    "passcode": null
+  }
+]
