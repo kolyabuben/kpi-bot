@@ -8,6 +8,14 @@ import path from 'path';
 import http from 'http';
 import { fileURLToPath } from 'url';
 
+// Prevent unhandled crashes
+process.on('uncaughtException', err => {
+  console.error('Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -585,40 +593,44 @@ async function handleLight(chatId) {
 
 // Background Alert Monitor (checks every 15 seconds)
 async function monitorAirRaid() {
-  const status = await fetchKyivAlarm();
-  if (!status) return;
+  try {
+    const status = await fetchKyivAlarm();
+    if (!status) return;
 
-  const subIds = Object.keys(subscribers).filter(id => subscribers[id].notifications !== false);
+    const subIds = Object.keys(subscribers).filter(id => subscribers[id].notifications !== false);
 
-  if (lastKyivAlarmState !== null && lastKyivAlarmState !== status.isActive) {
-    const timeStr = status.changed ? status.changed.slice(11, 16) : 'зараз';
+    if (lastKyivAlarmState !== null && lastKyivAlarmState !== status.isActive) {
+      const timeStr = status.changed ? status.changed.slice(11, 16) : 'зараз';
 
-    if (status.isActive) {
-      console.log('🚨 AIR RAID ALARM STARTED IN KYIV!');
-      const msg = 
-        `🚨 *УВАГА! ПОВІТРЯНА ТРИВОГА У КИЄВІ!* 🚨\n\n` +
-        `⏰ Час початку: *${timeStr}*\n\n` +
-        `⚠️ *За правилами КПІ пари призупинено!* Навчальний процес під час тривоги не проводиться.\n` +
-        `Перейди в укриття та бережи себе! 🛡`;
-      
-      for (const chatId of subIds) {
-        await sendMessage(chatId, msg);
-      }
-    } else {
-      console.log('🟢 AIR RAID ALARM ENDED IN KYIV!');
-      const msg = 
-        `🟢 *ВІДБІЙ ПОВІТРЯНОЇ ТРИВОГИ У КИЄВІ!* 🟢\n\n` +
-        `⏰ Час відбою: *${timeStr}*\n\n` +
-        `✅ Небезпека минула! Навчальний процес відновлюється за розкладом. 🎓`;
+      if (status.isActive) {
+        console.log('🚨 AIR RAID ALARM STARTED IN KYIV!');
+        const msg = 
+          `🚨 *УВАГА! ПОВІТРЯНА ТРИВОГА У КИЄВІ!* 🚨\n\n` +
+          `⏰ Час початку: *${timeStr}*\n\n` +
+          `⚠️ *За правилами КПІ пари призупинено!* Навчальний процес під час тривоги не проводиться.\n` +
+          `Перейди в укриття та бережи себе! 🛡`;
+        
+        for (const chatId of subIds) {
+          await sendMessage(chatId, msg);
+        }
+      } else {
+        console.log('🟢 AIR RAID ALARM ENDED IN KYIV!');
+        const msg = 
+          `🟢 *ВІДБІЙ ПОВІТРЯНОЇ ТРИВОГИ У КИЄВІ!* 🟢\n\n` +
+          `⏰ Час відбою: *${timeStr}*\n\n` +
+          `✅ Небезпека минула! Навчальний процес відновлюється за розкладом. 🎓`;
 
-      for (const chatId of subIds) {
-        await sendMessage(chatId, msg);
+        for (const chatId of subIds) {
+          await sendMessage(chatId, msg);
+        }
       }
     }
-  }
 
-  lastKyivAlarmState = status.isActive;
-  lastKyivAlarmChanged = status.changed;
+    lastKyivAlarmState = status.isActive;
+    lastKyivAlarmChanged = status.changed;
+  } catch (err) {
+    console.error('Error in monitorAirRaid:', err);
+  }
 }
 
 // Background scheduler
@@ -626,82 +638,86 @@ let alertedToday = new Set();
 let morningDigestSentDay = null;
 
 async function checkAndSendPairAlerts() {
-  const now = getKyivDate();
-  const currentHours = now.getHours();
-  const currentMinutes = now.getMinutes();
-  const timeInMinutes = currentHours * 60 + currentMinutes;
-  const todayDateStr = getTodayDateStr(0);
+  try {
+    const now = getKyivDate();
+    const currentHours = now.getHours();
+    const currentMinutes = now.getMinutes();
+    const timeInMinutes = currentHours * 60 + currentMinutes;
+    const todayDateStr = getTodayDateStr(0);
 
-  if (morningDigestSentDay !== todayDateStr && currentHours === 0 && currentMinutes < 5) {
-    alertedToday.clear();
-  }
+    if (morningDigestSentDay !== todayDateStr && currentHours === 0 && currentMinutes < 5) {
+      alertedToday.clear();
+    }
 
-  const kpiTime = await getCurrentKpiTime();
-  const pairs = await getDaySchedule(kpiTime.currentDay, kpiTime.currentWeek, todayDateStr);
-  if (!pairs || pairs.length === 0) return;
+    const kpiTime = await getCurrentKpiTime();
+    const pairs = await getDaySchedule(kpiTime.currentDay, kpiTime.currentWeek, todayDateStr);
+    if (!pairs || pairs.length === 0) return;
 
-  const subIds = Object.keys(subscribers).filter(id => subscribers[id].notifications !== false);
-  if (subIds.length === 0) return;
+    const subIds = Object.keys(subscribers).filter(id => subscribers[id].notifications !== false);
+    if (subIds.length === 0) return;
 
-  // 1. Morning Digest at 07:45 Kyiv time
-  if (morningDigestSentDay !== todayDateStr && currentHours === 7 && currentMinutes >= 45 && currentMinutes <= 55) {
-    morningDigestSentDay = todayDateStr;
-    const dayInfo = DAY_NAMES[kpiTime.currentDay] || { full: 'Сьогодні' };
-    const list = pairs.map((p, i) => formatPair(p, i + 1)).join('\n\n');
-    const banner = getAlarmBanner();
+    // 1. Morning Digest at 07:45 Kyiv time
+    if (morningDigestSentDay !== todayDateStr && currentHours === 7 && currentMinutes >= 45 && currentMinutes <= 55) {
+      morningDigestSentDay = todayDateStr;
+      const dayInfo = DAY_NAMES[kpiTime.currentDay] || { full: 'Сьогодні' };
+      const list = pairs.map((p, i) => formatPair(p, i + 1)).join('\n\n');
+      const banner = getAlarmBanner();
 
-    deadlines = loadDeadlines();
-    const upcomingDeadlines = deadlines.filter(d => {
-      const diff = getDaysDiff(d.date);
-      return diff >= 0 && diff <= 3;
-    });
-
-    let deadlinesSection = '';
-    if (upcomingDeadlines.length > 0) {
-      deadlinesSection = `\n\n📌 *Найближчі дедлайни:*\n` + upcomingDeadlines.map(d => {
+      deadlines = loadDeadlines();
+      const upcomingDeadlines = deadlines.filter(d => {
         const diff = getDaysDiff(d.date);
-        const prefix = diff === 0 ? '🔴 СЬОГОДНІ: ' : (diff === 1 ? '⚠️ ЗАВТРА: ' : `⏳ (${diff} дн.): `);
-        return `• ${prefix}*${d.title}*`;
-      }).join('\n');
-    }
+        return diff >= 0 && diff <= 3;
+      });
 
-    const msg = `🌅 *Доброго ранку!*\n\nСьогодні *${dayInfo.full}* (${kpiTime.currentWeek}-й тиждень, ${todayDateStr}).\nОсь твій розклад на сьогодні:\n\n${list}${banner}${deadlinesSection}\n\nУспішного дня! 🚀`;
-    for (const chatId of subIds) {
-      await sendMessage(chatId, msg);
-    }
-  }
-
-  // 2. Alert 15 minutes before each pair
-  for (const pair of pairs) {
-    const [pHour, pMin] = pair.time.split(':').map(Number);
-    const pairStartMinutes = pHour * 60 + pMin;
-    const diff = pairStartMinutes - timeInMinutes;
-
-    const alertKey = `${todayDateStr}_${pair.time}_${pair.name}`;
-    if (diff >= 14 && diff <= 16 && !alertedToday.has(alertKey)) {
-      alertedToday.add(alertKey);
-      
-      let alarmWarning = '';
-      if (lastKyivAlarmState === true) {
-        alarmWarning = `\n\n🚨 *ЗВЕРНИ УВАГУ:* У Києві зараз триває повітряна тривога! За правилами пари не проводяться, уточни у викладача чи буде пара.`;
+      let deadlinesSection = '';
+      if (upcomingDeadlines.length > 0) {
+        deadlinesSection = `\n\n📌 *Найближчі дедлайни:*\n` + upcomingDeadlines.map(d => {
+          const diff = getDaysDiff(d.date);
+          const prefix = diff === 0 ? '🔴 СЬОГОДНІ: ' : (diff === 1 ? '⚠️ ЗАВТРА: ' : `⏳ (${diff} дн.): `);
+          return `• ${prefix}*${d.title}*`;
+        }).join('\n');
       }
 
-      const msg = `🔔 *Через 15 хвилин пара!*\n\n${formatPair(pair)}${alarmWarning}\n\nНе запізнюйся! ⚡`;
+      const msg = `🌅 *Доброго ранку!*\n\nСьогодні *${dayInfo.full}* (${kpiTime.currentWeek}-й тиждень, ${todayDateStr}).\nОсь твій розклад на сьогодні:\n\n${list}${banner}${deadlinesSection}\n\nУспішного дня! 🚀`;
       for (const chatId of subIds) {
         await sendMessage(chatId, msg);
       }
     }
+
+    // 2. Alert 15 minutes before each pair
+    for (const pair of pairs) {
+      const [pHour, pMin] = pair.time.split(':').map(Number);
+      const pairStartMinutes = pHour * 60 + pMin;
+      const diff = pairStartMinutes - timeInMinutes;
+
+      const alertKey = `${todayDateStr}_${pair.time}_${pair.name}`;
+      if (diff >= 14 && diff <= 16 && !alertedToday.has(alertKey)) {
+        alertedToday.add(alertKey);
+        
+        let alarmWarning = '';
+        if (lastKyivAlarmState === true) {
+          alarmWarning = `\n\n🚨 *ЗВЕРНИ УВАГУ:* У Києві зараз триває повітряна тривога! За правилами пари не проводяться, уточни у викладача чи буде пара.`;
+        }
+
+        const msg = `🔔 *Через 15 хвилин пара!*\n\n${formatPair(pair)}${alarmWarning}\n\nНе запізнюйся! ⚡`;
+        for (const chatId of subIds) {
+          await sendMessage(chatId, msg);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error in checkAndSendPairAlerts:', err);
   }
 }
 
-// Polling loop
+// Fast Polling loop
 let lastUpdateId = 0;
 
 async function pollUpdates() {
   try {
     const res = await tgRequest('getUpdates', {
       offset: lastUpdateId + 1,
-      timeout: 25,
+      timeout: 10,
     });
 
     if (res && res.ok && Array.isArray(res.result)) {
@@ -776,11 +792,17 @@ async function pollUpdates() {
     console.error('Polling error:', err.message);
   }
 
-  setTimeout(pollUpdates, 500);
+  setTimeout(pollUpdates, 100);
 }
 
 // Start
 console.log('🚀 Бот розкладу ПІ-51, тривог, дедлайнів та світла запущений!');
+
+// Make sure webhook is clean
+tgRequest('deleteWebhook').then(() => {
+  console.log('✅ Webhook cleaned up for fast polling.');
+  pollUpdates();
+});
 
 fetchKyivAlarm().then(st => {
   if (st) {
@@ -796,6 +818,3 @@ setInterval(monitorAirRaid, 15000);
 // Pair alerts scheduler (every 30 seconds)
 setInterval(checkAndSendPairAlerts, 30000);
 checkAndSendPairAlerts();
-
-// Polling
-pollUpdates();
