@@ -508,7 +508,7 @@ async function handleShowDeadlines(chatId) {
   return sendMessage(chatId, text);
 }
 
-async function handleAddDeadline(chatId, text, userName) {
+async function handleAddDeadline(chatId, text, fromUser) {
   const regex = /^\/(?:add|task)\s+(\d{1,2})[\.\/-](\d{1,2})(?:[\.\/-](\d{2,4}))?\s+(.+)$/i;
   const match = text.match(regex);
 
@@ -534,28 +534,54 @@ async function handleAddDeadline(chatId, text, userName) {
   deadlines = loadDeadlines();
   const newId = deadlines.length > 0 ? Math.max(...deadlines.map(d => d.id || 0)) + 1 : 1;
 
+  let authorName = 'Студент';
+  if (fromUser) {
+    if (fromUser.first_name === '6u6en' || fromUser.username === '6u6en' || fromUser.id === 1277111400) {
+      authorName = '6u6en';
+    } else if (fromUser.first_name) {
+      authorName = fromUser.first_name;
+    } else if (fromUser.username) {
+      authorName = `@${fromUser.username}`;
+    }
+  }
+
   const newItem = {
     id: newId,
     date: formattedDate,
     title: title,
-    addedBy: '6u6en',
+    addedBy: authorName,
   };
 
   deadlines.push(newItem);
   saveDeadlines(deadlines);
 
   const diff = getDaysDiff(formattedDate);
-  return sendMessage(
+  
+  // 1. Send confirmation to sender
+  await sendMessage(
     chatId,
     `✅ *Дедлайн успішно додано!* 📌\n\n` +
     `ID: *${newId}*\n` +
     `Дата: *${day}.${month}.${year}* (через ${diff} дн.)\n` +
     `Завдання: *${title}*\n\n` +
-    `_Бот нагадає про цей дедлайн у ранковій розсилці!_`
+    `_Бот надіслав сповіщення всім друзям у групі!_`
   );
+
+  // 2. Broadcast to all other subscribers in real-time
+  const broadcastMsg = 
+    `📌 *Новий дедлайн для групи ПІ-51!*\n\n` +
+    `👤 Додав: *${authorName}*\n` +
+    `🗓 Дата: *${day}.${month}.${year}* (через ${diff} дн.)\n` +
+    `📝 Завдання: *${title}*\n\n` +
+    `_Дедлайн збережено у загальний список бота!_`;
+
+  const otherSubIds = Object.keys(subscribers).filter(id => id !== String(chatId) && subscribers[id].notifications !== false);
+  for (const sId of otherSubIds) {
+    await sendMessage(sId, broadcastMsg);
+  }
 }
 
-async function handleDeleteDeadline(chatId, text) {
+async function handleDeleteDeadline(chatId, text, fromUser) {
   const match = text.match(/^\/(?:done|del)\s+(\d+)$/i);
   if (!match) {
     return sendMessage(chatId, `⚠️ Вкажи ID завдання: наприклад \`/done 1\``);
@@ -572,7 +598,28 @@ async function handleDeleteDeadline(chatId, text) {
   const removed = deadlines.splice(idx, 1)[0];
   saveDeadlines(deadlines);
 
-  return sendMessage(chatId, `🎉 *Завдання виконано і видалено!* ✅\n\n*${removed.title}*\nМінус один дедлайн! Завдання закрито.`);
+  let authorName = 'Студент';
+  if (fromUser) {
+    if (fromUser.first_name === '6u6en' || fromUser.username === '6u6en' || fromUser.id === 1277111400) {
+      authorName = '6u6en';
+    } else if (fromUser.first_name) {
+      authorName = fromUser.first_name;
+    }
+  }
+
+  // 1. Reply to sender
+  await sendMessage(chatId, `🎉 *Завдання виконано і видалено!* ✅\n\n*${removed.title}*\nМінус один дедлайн! Завдання закрито.`);
+
+  // 2. Notify other group members
+  const doneMsg = 
+    `🎉 *Один з дедлайнів закрито!*\n\n` +
+    `*${removed.title}*\n` +
+    `👤 Виконав / зняв: *${authorName}*`;
+
+  const otherSubIds = Object.keys(subscribers).filter(id => id !== String(chatId) && subscribers[id].notifications !== false);
+  for (const sId of otherSubIds) {
+    await sendMessage(sId, doneMsg);
+  }
 }
 
 // Light & DTEK Info Handler for Vyshhorod (Line 6.2)
@@ -770,9 +817,9 @@ async function pollUpdates() {
         } else if (text === '📝 Дедлайни' || text === '/deadlines' || text === '/tasks') {
           await handleShowDeadlines(chatId);
         } else if (text.startsWith('/add') || text.startsWith('/task')) {
-          await handleAddDeadline(chatId, text, from);
+          await handleAddDeadline(chatId, text, update.message.from);
         } else if (text.startsWith('/done') || text.startsWith('/del')) {
-          await handleDeleteDeadline(chatId, text);
+          await handleDeleteDeadline(chatId, text, update.message.from);
         } else if (text === '⚡ Графік світла' || text === '/light') {
           await handleLight(chatId);
         } else if (text === '🔗 Всі посилання' || text === '/links') {
