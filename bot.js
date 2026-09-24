@@ -498,7 +498,7 @@ async function handleShowDeadlines(chatId) {
 
     text += `📌 *[ID: ${item.id}]* ${badge}\n`;
     text += `   *${item.title}*\n`;
-    text += `   _Додано: ${item.addedBy || 'студентом'}_\n\n`;
+    text += `   _Додано: ${item.addedBy || '6u6en'}_\n\n`;
   });
 
   text += `💡 *Як керувати:*\n`;
@@ -538,7 +538,7 @@ async function handleAddDeadline(chatId, text, userName) {
     id: newId,
     date: formattedDate,
     title: title,
-    addedBy: userName || 'Босс',
+    addedBy: '6u6en',
   };
 
   deadlines.push(newItem);
