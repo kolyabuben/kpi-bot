@@ -1,6 +1,8 @@
 // Telegram Bot for KPI Group ПІ-51
 // Live KPI Campus API + Subject Zoom Links + Real-time Kyiv Air Raid Alarm Monitor
 
+process.env.TZ = 'Europe/Kyiv';
+
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
@@ -35,6 +37,12 @@ if (APP_URL) {
       console.error('Self-ping failed:', e.message);
     }
   }, 10 * 60 * 1000); // Every 10 mins
+}
+
+// Timezone Helper: Always get exact Europe/Kyiv time regardless of server location
+function getKyivDate() {
+  const now = new Date();
+  return new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' }));
 }
 
 const DAY_NAMES = {
@@ -154,7 +162,7 @@ async function getCurrentKpiTime() {
     return await res.json();
   } catch (err) {
     console.error('Failed to fetch current time from campus API:', err.message);
-    const now = new Date();
+    const now = getKyivDate();
     let day = now.getDay();
     if (day === 0) day = 7;
     return { currentWeek: 2, currentDay: day, currentLesson: 0 };
@@ -182,14 +190,16 @@ function formatPair(pair, index) {
 
 function filterPairsForDate(pairs, dateStr) {
   if (!pairs || !Array.isArray(pairs)) return [];
-  return pairs.filter(p => {
+  const filtered = pairs.filter(p => {
     if (!p.dates || p.dates.length === 0) return true;
     return p.dates.includes(dateStr);
   });
+  // Sort chronologically by start time
+  return filtered.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 }
 
 function getTodayDateStr(offsetDays = 0) {
-  const d = new Date();
+  const d = getKyivDate();
   if (offsetDays !== 0) {
     d.setDate(d.getDate() + offsetDays);
   }
@@ -342,7 +352,7 @@ async function handleNow(chatId) {
     return sendMessage(chatId, `🏖 Сьогодні пар немає.${banner}`);
   }
 
-  const now = new Date();
+  const now = getKyivDate();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
   let currentPair = null;
@@ -351,7 +361,7 @@ async function handleNow(chatId) {
   for (const pair of pairs) {
     const [h, m] = pair.time.split(':').map(Number);
     const startM = h * 60 + m;
-    const endM = startM + 95;
+    const endM = startM + 95; // Pair length: 1h 35m
 
     if (currentMinutes >= startM && currentMinutes <= endM) {
       currentPair = pair;
@@ -360,11 +370,11 @@ async function handleNow(chatId) {
     }
   }
 
-  let text = `⏰ *Статус на цей момент:*\n`;
+  let text = `⏰ *Статус на цей момент (${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}):*\n`;
   if (currentPair) {
     text += `\n🟢 *ЗАРАЗ ІДЕ ПАРА:*\n${formatPair(currentPair)}\n`;
   } else {
-    text += `\n⏸ *Зараз пари немає.*\n`;
+    text += `\n⏸ *Зараз перерва або пари немає.*\n`;
   }
 
   if (nextPair) {
@@ -422,7 +432,7 @@ async function handleAllLinks(chatId) {
   return sendMessage(chatId, text);
 }
 
-// Background Alert Monitor (checks every 20 seconds)
+// Background Alert Monitor (checks every 15 seconds)
 async function monitorAirRaid() {
   const status = await fetchKyivAlarm();
   if (!status) return;
@@ -465,7 +475,7 @@ let alertedToday = new Set();
 let morningDigestSentDay = null;
 
 async function checkAndSendPairAlerts() {
-  const now = new Date();
+  const now = getKyivDate();
   const currentHours = now.getHours();
   const currentMinutes = now.getMinutes();
   const timeInMinutes = currentHours * 60 + currentMinutes;
@@ -482,7 +492,7 @@ async function checkAndSendPairAlerts() {
   const subIds = Object.keys(subscribers).filter(id => subscribers[id].notifications !== false);
   if (subIds.length === 0) return;
 
-  // 1. Morning Digest at 07:45
+  // 1. Morning Digest at 07:45 Kyiv time
   if (morningDigestSentDay !== todayDateStr && currentHours === 7 && currentMinutes >= 45 && currentMinutes <= 55) {
     morningDigestSentDay = todayDateStr;
     const dayInfo = DAY_NAMES[kpiTime.currentDay] || { full: 'Сьогодні' };
