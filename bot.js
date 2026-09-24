@@ -297,24 +297,20 @@ async function tgRequest(method, params = {}) {
 
 const BOSS_KEYBOARD = {
   keyboard: [
-    [{ text: '📅 Сьогодні' }, { text: '⏭ Завтра' }],
-    [{ text: '🗓 Цей тиждень' }, { text: '🗓 Наступний тиждень' }],
-    [{ text: '⏰ Що зараз?' }, { text: '🚨 Статус тривоги' }],
-    [{ text: '📝 Дедлайни' }, { text: '📊 Бали РСО' }],
-    [{ text: '⚡ Графік світла' }, { text: '🔗 Всі посилання' }],
-    [{ text: '🔔 Сповіщення' }, { text: '🚨 Режим SOS' }],
+    [{ text: '📅 Сьогодні' }, { text: '⏭ Завтра' }, { text: '⏰ Зараз' }],
+    [{ text: '🗓 Цей тиждень' }, { text: '🗓 Наступний' }, { text: '🚨 Тривога' }],
+    [{ text: '📝 Дедлайни' }, { text: '📊 Бали РСО' }, { text: '🚨 SOS' }],
+    [{ text: '⚡ Світло' }, { text: '🔗 Посилання' }, { text: '🔔 Сповіщення' }],
   ],
   resize_keyboard: true,
 };
 
 const DEFAULT_KEYBOARD = {
   keyboard: [
-    [{ text: '📅 Сьогодні' }, { text: '⏭ Завтра' }],
-    [{ text: '🗓 Цей тиждень' }, { text: '🗓 Наступний тиждень' }],
-    [{ text: '⏰ Що зараз?' }, { text: '🚨 Статус тривоги' }],
-    [{ text: '📝 Дедлайни' }, { text: '📊 Бали РСО' }],
-    [{ text: '🔗 Всі посилання' }, { text: '🚨 Режим SOS' }],
-    [{ text: '🔔 Сповіщення' }],
+    [{ text: '📅 Сьогодні' }, { text: '⏭ Завтра' }, { text: '⏰ Зараз' }],
+    [{ text: '🗓 Цей тиждень' }, { text: '🗓 Наступний' }, { text: '🚨 Тривога' }],
+    [{ text: '📝 Дедлайни' }, { text: '📊 Бали РСО' }, { text: '🚨 SOS' }],
+    [{ text: '🔗 Посилання' }, { text: '🔔 Сповіщення' }],
   ],
   resize_keyboard: true,
 };
@@ -1242,13 +1238,13 @@ async function pollUpdates() {
           await handleTomorrow(chatId);
         } else if (text === '🗓 Цей тиждень' || text === '/week') {
           await handleWeek(chatId);
-        } else if (text === '🗓 Наступний тиждень' || text === '/nextweek') {
+        } else if (text === '🗓 Наступний тиждень' || text === '🗓 Наступний' || text === '/nextweek') {
           const kpi = await getCurrentKpiTime();
           const nextWeek = kpi.currentWeek === 1 ? 2 : 1;
           await handleWeek(chatId, nextWeek);
-        } else if (text === '⏰ Що зараз?' || text === '/now') {
+        } else if (text === '⏰ Що зараз?' || text === '⏰ Зараз' || text === '/now') {
           await handleNow(chatId);
-        } else if (text === '🚨 Статус тривоги' || text === '/alarm') {
+        } else if (text === '🚨 Статус тривоги' || text === '🚨 Тривога' || text === '/alarm') {
           await handleAlarmStatus(chatId);
         } else if (text === '📝 Дедлайни' || text === '/deadlines' || text === '/tasks') {
           await handleShowDeadlines(chatId);
@@ -1264,11 +1260,11 @@ async function pollUpdates() {
           await handleDelRso(chatId, text);
         } else if (text.startsWith('/rso_calc')) {
           await handleRsoCalc(chatId, text);
-        } else if (text === '🚨 Режим SOS' || text === '/sos' || text === '/panic') {
+        } else if (text === '🚨 Режим SOS' || text === '🚨 SOS' || text === '/sos' || text === '/panic') {
           await handleSos(chatId);
-        } else if (text === '⚡ Графік світла' || text === '/light') {
+        } else if (text === '⚡ Графік світла' || text === '⚡ Світло' || text === '/light') {
           await handleLight(chatId);
-        } else if (text === '🔗 Всі посилання' || text === '/links') {
+        } else if (text === '🔗 Всі посилання' || text === '🔗 Посилання' || text === '/links') {
           await handleAllLinks(chatId);
         } else if (text === '/users' || text === '/subscribers' || text === '/stats') {
           const list = Object.keys(subscribers).map((id, idx) => {
