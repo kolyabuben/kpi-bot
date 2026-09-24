@@ -301,7 +301,7 @@ const KEYBOARD = {
     [{ text: '⏰ Що зараз?' }, { text: '🚨 Статус тривоги' }],
     [{ text: '📝 Дедлайни' }, { text: '📊 Бали РСО' }],
     [{ text: '⚡ Графік світла' }, { text: '🔗 Всі посилання' }],
-    [{ text: '🔔 Сповіщення' }],
+    [{ text: '🔔 Сповіщення' }, { text: '🚨 Режим SOS' }],
   ],
   resize_keyboard: true,
 };
@@ -895,6 +895,121 @@ async function handleRsoCalc(chatId, text) {
   );
 }
 
+// --- Survival / Panic Mode (SOS) ---
+async function handleSos(chatId) {
+  deadlines = loadDeadlines();
+  rsoData = loadRso();
+  const userScores = rsoData[chatId] || {};
+
+  // 1. Analyze Deadlines
+  const activeDeadlines = [];
+  const overdueDeadlines = [];
+
+  for (const d of deadlines) {
+    const diff = getDaysDiff(d.date);
+    if (diff < 0) {
+      overdueDeadlines.push({ ...d, diff });
+    } else {
+      activeDeadlines.push({ ...d, diff });
+    }
+  }
+
+  activeDeadlines.sort((a, b) => a.diff - b.diff);
+  overdueDeadlines.sort((a, b) => b.diff - a.diff);
+
+  const burningNow = activeDeadlines.filter(d => d.diff <= 1);
+  const burningSoon = activeDeadlines.filter(d => d.diff >= 2 && d.diff <= 4);
+  const laterTasks = activeDeadlines.filter(d => d.diff > 4);
+
+  // 2. Analyze RSO Critical Subjects (< 60 points)
+  const criticalSubjects = [];
+  const safeSubjects = [];
+
+  for (const [subjName, data] of Object.entries(userScores)) {
+    const score = data.score || 0;
+    if (score < 60) {
+      criticalSubjects.push({ name: subjName, score, need: Math.round((60 - score) * 10) / 10 });
+    } else {
+      safeSubjects.push({ name: subjName, score });
+    }
+  }
+  criticalSubjects.sort((a, b) => b.need - a.need);
+
+  let text = `🚨 *РЕЖИМ SOS: ПЛАН ВИЖИВАННЯ ДЛЯ ПІ-51* 🚨\n\n`;
+  text += `_Спокійно, без паніки! Розкладаємо весь завал на чіткі пріоритети:_\n\n`;
+
+  // Section 1: Burning Deadlines
+  if (burningNow.length > 0) {
+    text += `🔥 *ГОРИТЬ ЗАРАЗ (Сьогодні / Завтра):*\n`;
+    burningNow.forEach(d => {
+      const tag = d.diff === 0 ? '🔴 СЬОГОДНІ' : '⚠️ ЗАВТРА';
+      text += `• ${tag}: *${d.title}* (ID: \`${d.id}\`)\n`;
+    });
+    text += `\n`;
+  }
+
+  if (burningSoon.length > 0) {
+    text += `⏳ *НА ПІДХОДІ (2–4 дні):*\n`;
+    burningSoon.forEach(d => {
+      text += `• Через ${d.diff} дн.: *${d.title}* (ID: \`${d.id}\`)\n`;
+    });
+    text += `\n`;
+  }
+
+  if (overdueDeadlines.length > 0) {
+    text += `⚠️ *ПРОСТРОЧЕНО (здати якомога швидше):*\n`;
+    overdueDeadlines.forEach(d => {
+      text += `• Прострочено на ${Math.abs(d.diff)} дн.: *${d.title}* (ID: \`${d.id}\`)\n`;
+    });
+    text += `\n`;
+  }
+
+  if (activeDeadlines.length === 0 && overdueDeadlines.length === 0) {
+    text += `🟢 *Активних дедлайнів немає!* У списку завдань зараз чисто й спокійно.\n\n`;
+  }
+
+  // Section 2: RSO Health Check
+  if (criticalSubjects.length > 0) {
+    text += `📉 *НЕБЕЗПЕЧНІ ЗОНИ ПО РСО (< 60 б.):*\n`;
+    criticalSubjects.forEach(s => {
+      text += `• ${s.name}: *${s.score} / 100 б.* (до заліку ще *+${s.need} б.*)\n`;
+    });
+    text += `\n`;
+  } else if (safeSubjects.length > 0) {
+    text += `🛡 *По РСО порядок:* усі записані дисципліни мають 60+ балів!\n\n`;
+  }
+
+  // Section 3: Strategic Action Plan
+  text += `🎯 *ТВІЙ ПОКРОКОВИЙ ПЛАН ДІЙ:*\n`;
+
+  let stepNum = 1;
+  if (burningNow.length > 0) {
+    const topUrgent = burningNow[0];
+    text += `1️⃣ *Крок 1:* Сконцентруйся на *«${topUrgent.title}»*. Здай його першим — це зніме 50% стресу та вбереже від дедлайну.\n`;
+    stepNum++;
+  } else if (overdueDeadlines.length > 0) {
+    const topOverdue = overdueDeadlines[0];
+    text += `1️⃣ *Крок 1:* Напиши викладачу з приводу хвоста *«${topOverdue.title}»* і здай його сьогодні.\n`;
+    stepNum++;
+  }
+
+  if (criticalSubjects.length > 0) {
+    const worstSubj = criticalSubjects[0];
+    text += `${stepNum}️⃣ *Крок ${stepNum}:* Зроби додаткову лабу чи тест з *«${worstSubj.name}»*, щоб добрати +${worstSubj.need} б. до допуску.\n`;
+    stepNum++;
+  } else if (burningSoon.length > 0) {
+    const nextTask = burningSoon[0];
+    text += `${stepNum}️⃣ *Крок ${stepNum}:* Почни заздалегідь робити *«${nextTask.title}»*, щоб не сидіти в останню ніч.\n`;
+    stepNum++;
+  }
+
+  text += `${stepNum}️⃣ *Крок ${stepNum}:* Працюй відрізками по 45 хвилин із 10-хвилинними перервами. Заряди телефон і ноут!\n\n`;
+
+  text += `💪 _Пам'ятай: «Очі бояться, а руки роблять». Закрив завдання — тисни \`/done [id]\` і рухайся далі!_`;
+
+  return sendMessage(chatId, text);
+}
+
 // Light & DTEK Info Handler for Vyshhorod (Line 6.2)
 async function handleLight(chatId) {
   const text = 
@@ -1080,6 +1195,7 @@ async function pollUpdates() {
             `🚨 *Моніторинг повітряних тривог Києва* у реальному часі\n` +
             `📝 *Трекер дедлайнів по лабам* (\`/add 29.09 Назва\`)\n` +
             `📊 *Калькулятор балів РСО КПІ* (\`/rso\` або \`/rso_add\`)\n` +
+            `🚨 *Режим SOS / План виживання* (\`/sos\`) — порятунок від завалів\n` +
             `⚡ *Графік світла* (м. Вишгород, черга 6.2)\n` +
             `🌅 Ранковий дайджест о 07:45 зі списком пар та дедлайнів!\n\n` +
             `Тисни на кнопки внизу для перевірки! 👇`
@@ -1113,6 +1229,8 @@ async function pollUpdates() {
           await handleDelRso(chatId, text);
         } else if (text.startsWith('/rso_calc')) {
           await handleRsoCalc(chatId, text);
+        } else if (text === '🚨 Режим SOS' || text === '/sos' || text === '/panic') {
+          await handleSos(chatId);
         } else if (text === '⚡ Графік світла' || text === '/light') {
           await handleLight(chatId);
         } else if (text === '🔗 Всі посилання' || text === '/links') {
