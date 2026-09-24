@@ -1,5 +1,5 @@
 // Telegram Bot for KPI Group ПІ-51
-// Live KPI Campus API + Subject Zoom Links + Real-time Kyiv Air Raid Alarm Monitor
+// Live KPI Campus API + Subject Zoom Links + Real-time Kyiv Air Raid Alarm Monitor + Deadlines + DTEK Light Info
 
 process.env.TZ = 'Europe/Kyiv';
 
@@ -15,12 +15,13 @@ const TOKEN = process.env.BOT_TOKEN || '8866763001:AAEDnXFRytLSju4XJCuC34zbh_0y9
 const GROUP_ID = '5255';
 const SUBSCRIBERS_FILE = path.join(__dirname, 'subscribers.json');
 const LINKS_FILE = path.join(__dirname, 'links.json');
+const DEADLINES_FILE = path.join(__dirname, 'deadlines.json');
 
 // Built-in HTTP server for cloud platforms (Render, Koyeb, Railway)
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end('KPI Schedule & Air Raid Alert Bot (ПІ-51) is running 24/7! 🚀');
+  res.end('KPI Schedule & Student Assistant Bot (ПІ-51) is running 24/7! 🚀');
 });
 server.listen(PORT, () => {
   console.log(`🌐 Web server active on port ${PORT}`);
@@ -88,6 +89,28 @@ function findLinkForPair(pair) {
   }
   return null;
 }
+
+// Deadlines Manager
+function loadDeadlines() {
+  try {
+    if (fs.existsSync(DEADLINES_FILE)) {
+      return JSON.parse(fs.readFileSync(DEADLINES_FILE, 'utf-8'));
+    }
+  } catch (err) {
+    console.error('Error loading deadlines.json:', err);
+  }
+  return [];
+}
+
+function saveDeadlines(list) {
+  try {
+    fs.writeFileSync(DEADLINES_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving deadlines.json:', err);
+  }
+}
+
+let deadlines = loadDeadlines();
 
 // Subscribers
 function loadSubscribers() {
@@ -194,7 +217,6 @@ function filterPairsForDate(pairs, dateStr) {
     if (!p.dates || p.dates.length === 0) return true;
     return p.dates.includes(dateStr);
   });
-  // Sort chronologically by start time
   return filtered.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 }
 
@@ -246,6 +268,7 @@ const KEYBOARD = {
     [{ text: '📅 Сьогодні' }, { text: '⏭ Завтра' }],
     [{ text: '🗓 Цей тиждень' }, { text: '🗓 Наступний тиждень' }],
     [{ text: '⏰ Що зараз?' }, { text: '🚨 Статус тривоги' }],
+    [{ text: '📝 Дедлайни' }, { text: '⚡ Графік світла' }],
     [{ text: '🔗 Всі посилання' }, { text: '🔔 Сповіщення' }],
   ],
   resize_keyboard: true,
@@ -268,7 +291,7 @@ function getAlarmBanner() {
   return '';
 }
 
-// Handlers
+// Handlers for Schedule
 async function handleToday(chatId) {
   const kpiTime = await getCurrentKpiTime();
   const dayInfo = DAY_NAMES[kpiTime.currentDay] || { full: 'Сьогодні' };
@@ -361,7 +384,7 @@ async function handleNow(chatId) {
   for (const pair of pairs) {
     const [h, m] = pair.time.split(':').map(Number);
     const startM = h * 60 + m;
-    const endM = startM + 95; // Pair length: 1h 35m
+    const endM = startM + 95;
 
     if (currentMinutes >= startM && currentMinutes <= endM) {
       currentPair = pair;
@@ -432,6 +455,134 @@ async function handleAllLinks(chatId) {
   return sendMessage(chatId, text);
 }
 
+// Deadlines Handlers
+function getDaysDiff(targetDateStr) {
+  const todayStr = getTodayDateStr(0);
+  const d1 = new Date(todayStr);
+  const d2 = new Date(targetDateStr);
+  const diffTime = d2.getTime() - d1.getTime();
+  return Math.round(diffTime / (1000 * 3600 * 24));
+}
+
+async function handleShowDeadlines(chatId) {
+  deadlines = loadDeadlines();
+  if (deadlines.length === 0) {
+    return sendMessage(
+      chatId,
+      `📝 *Активних дедлайнів немає!* 🎉\n\n` +
+      `Щоб додати новий дедлайн, надішли команду:\n` +
+      `👉 \`/add 29.09 Назва предмету і лаби\`\n` +
+      `*(наприклад: \`/add 29.09 Програмування: лаба 1\`)*`
+    );
+  }
+
+  // Sort deadlines by date
+  deadlines.sort((a, b) => a.date.localeCompare(b.date));
+
+  let text = `📝 *Список активних дедлайнів та лаб (ПІ-51):*\n\n`;
+  deadlines.forEach(item => {
+    const diff = getDaysDiff(item.date);
+    let badge = '';
+    if (diff < 0) badge = '❌ *ПРОСТРОЧЕНО!*';
+    else if (diff === 0) badge = '🔴 *СЬОГОДНІ ДЕДЛАЙН!*';
+    else if (diff === 1) badge = '⚠️ *ЗАВТРА!*';
+    else if (diff <= 3) badge = `⏳ *Залишилось ${diff} дн.*`;
+    else badge = `🗓 До ${item.date.slice(8, 10)}.${item.date.slice(5, 7)} (${diff} дн.)`;
+
+    text += `📌 *[ID: ${item.id}]* ${badge}\n`;
+    text += `   *${item.title}*\n`;
+    text += `   _Додано: ${item.addedBy || 'студентом'}_\n\n`;
+  });
+
+  text += `💡 *Як керувати:*\n`;
+  text += `➕ Додати: \`/add 29.09 Текст\`\n`;
+  text += `✅ Видалити здану: \`/done ID\` *(наприклад: \`/done 1\`)*`;
+
+  return sendMessage(chatId, text);
+}
+
+async function handleAddDeadline(chatId, text, userName) {
+  // Matches: /add 29.09 Text or /task 2026-09-29 Text or /add 29.09.2026 Text
+  const regex = /^\/(?:add|task)\s+(\d{1,2})[\.\/-](\d{1,2})(?:[\.\/-](\d{2,4}))?\s+(.+)$/i;
+  const match = text.match(regex);
+
+  if (!match) {
+    return sendMessage(
+      chatId,
+      `⚠️ *Неправильний формат команди, босс!*\n\n` +
+      `Пиши так:\n` +
+      `👉 \`/add 29.09 Програмування: лаба №1\`\n` +
+      `або з роком:\n` +
+      `👉 \`/add 05.10.2026 Вишмат: розрахункова\``
+    );
+  }
+
+  const day = match[1].padStart(2, '0');
+  const month = match[2].padStart(2, '0');
+  const nowYear = getKyivDate().getFullYear();
+  let year = match[3] ? (match[3].length === 2 ? `20${match[3]}` : match[3]) : String(nowYear);
+  const title = match[4].trim();
+
+  const formattedDate = `${year}-${month}-${day}`;
+
+  deadlines = loadDeadlines();
+  const newId = deadlines.length > 0 ? Math.max(...deadlines.map(d => d.id || 0)) + 1 : 1;
+
+  const newItem = {
+    id: newId,
+    date: formattedDate,
+    title: title,
+    addedBy: userName || 'Босс',
+  };
+
+  deadlines.push(newItem);
+  saveDeadlines(deadlines);
+
+  const diff = getDaysDiff(formattedDate);
+  return sendMessage(
+    chatId,
+    `✅ *Дедлайн успішно додано!* 📌\n\n` +
+    `ID: *${newId}*\n` +
+    `Дата: *${day}.${month}.${year}* (через ${diff} дн.)\n` +
+    `Завдання: *${title}*\n\n` +
+    `_Бот нагадає про цей дедлайн у ранковій розсилці!_`
+  );
+}
+
+async function handleDeleteDeadline(chatId, text) {
+  const match = text.match(/^\/(?:done|del)\s+(\d+)$/i);
+  if (!match) {
+    return sendMessage(chatId, `⚠️ Вкажи ID завдання: наприклад \`/done 1\``);
+  }
+
+  const targetId = Number(match[1]);
+  deadlines = loadDeadlines();
+  const idx = deadlines.findIndex(d => d.id === targetId);
+
+  if (idx === -1) {
+    return sendMessage(chatId, `❌ Завдання з ID ${targetId} не знайдено.`);
+  }
+
+  const removed = deadlines.splice(idx, 1)[0];
+  saveDeadlines(deadlines);
+
+  return sendMessage(chatId, `🎉 *Завдання виконано і видалено!* ✅\n\n*${removed.title}*\nКрасава, босс! Минус один дедлайн! 💪`);
+}
+
+// Light & DTEK Info Handler
+async function handleLight(chatId) {
+  const text = 
+    `⚡ *Графік відключень світла (Київ / ДТЕК / YASNO):*\n\n` +
+    `💡 У Києві діють стабілізаційні графіки за **6 групами (чергами)**.\n\n` +
+    `🔗 *Офіційні графіки за твоєю адресою:*\n` +
+    `👉 [Перевірити графік на сайті ДТЕК Київ](https://www.dtek-kem.com.ua/ua/shutdowns)\n` +
+    `👉 [Бот YASNO для перевірки черги](https://t.me/YasnoOnlineBot)\n\n` +
+    `🏢 *Гуртожитки та корпуса КПИ:* більшість розташовані в **1-й** та **2-й** чергах ДТЕК.\n\n` +
+    `📌 _Порада: збережи свою групу в боті YASNO, щоб отримувати прямі пуші про відключення на твоїй вулиці!_`;
+
+  return sendMessage(chatId, text);
+}
+
 // Background Alert Monitor (checks every 15 seconds)
 async function monitorAirRaid() {
   const status = await fetchKyivAlarm();
@@ -470,7 +621,7 @@ async function monitorAirRaid() {
   lastKyivAlarmChanged = status.changed;
 }
 
-// Background scheduler for pair notifications
+// Background scheduler for pair notifications and morning digest
 let alertedToday = new Set();
 let morningDigestSentDay = null;
 
@@ -498,7 +649,24 @@ async function checkAndSendPairAlerts() {
     const dayInfo = DAY_NAMES[kpiTime.currentDay] || { full: 'Сьогодні' };
     const list = pairs.map((p, i) => formatPair(p, i + 1)).join('\n\n');
     const banner = getAlarmBanner();
-    const msg = `🌅 *Доброго ранку, босс!*\n\nСьогодні *${dayInfo.full}* (${kpiTime.currentWeek}-й тиждень, ${todayDateStr}).\nОсь твій розклад на сьогодні:\n\n${list}${banner}\n\nУспішного дня! 🚀`;
+
+    // Check deadlines due soon (<= 3 days)
+    deadlines = loadDeadlines();
+    const upcomingDeadlines = deadlines.filter(d => {
+      const diff = getDaysDiff(d.date);
+      return diff >= 0 && diff <= 3;
+    });
+
+    let deadlinesSection = '';
+    if (upcomingDeadlines.length > 0) {
+      deadlinesSection = `\n\n📌 *Найближчі дедлайни:*\n` + upcomingDeadlines.map(d => {
+        const diff = getDaysDiff(d.date);
+        const prefix = diff === 0 ? '🔴 СЬОГОДНІ: ' : (diff === 1 ? '⚠️ ЗАВТРА: ' : `⏳ (${diff} дн.): `);
+        return `• ${prefix}*${d.title}*`;
+      }).join('\n');
+    }
+
+    const msg = `🌅 *Доброго ранку, босс!*\n\nСьогодні *${dayInfo.full}* (${kpiTime.currentWeek}-й тиждень, ${todayDateStr}).\nОсь твій розклад на сьогодні:\n\n${list}${banner}${deadlinesSection}\n\nУспішного дня! 🚀`;
     for (const chatId of subIds) {
       await sendMessage(chatId, msg);
     }
@@ -561,11 +729,13 @@ async function pollUpdates() {
           await sendMessage(
             chatId,
             `👋 *Привіт, босс!*\n\nЯ твій персональний помічник по розкладу для групи *ПІ-51*.\n\n` +
-            `✅ Я автоматично підтягую актуальні дані з офіційного сервера КПІ (Campus).\n` +
-            `⏰ Нагадую за *15 хвилин* до кожної пари з прямим лінком на Zoom!\n` +
-            `🚨 *Моніторю повітряні тривоги у Києві в реальному часі* — миттєво повідомлю про початок і відбій, та нагадаю, що пари під час тривоги призупиняються!\n` +
-            `🌅 А щоранку о 07:45 пришлю повний список пар на день.\n\n` +
-            `Тисни на кнопки внизу, щоб перевірити розклад або тривогу! 👇`
+            `✅ Автоматичний розклад з офіційного сервера КПІ (Campus)\n` +
+            `⏰ Нагадування за *15 хвилин* до кожної пари з Zoom-посиланням\n` +
+            `🚨 *Моніторинг повітряних тривог Києва* у реальному часі\n` +
+            `📝 *Трекер дедлайнів по лабам* (\`/add 29.09 Назва\`)\n` +
+            `⚡ *Графіки відключення світла* (ДТЕК/YASNO)\n` +
+            `🌅 Ранковий дайджест о 07:45 зі списком пар та дедлайнів!\n\n` +
+            `Тисни на кнопки внизу для перевірки! 👇`
           );
           await handleToday(chatId);
         } else if (text === '📅 Сьогодні' || text === '/today') {
@@ -582,6 +752,14 @@ async function pollUpdates() {
           await handleNow(chatId);
         } else if (text === '🚨 Статус тривоги' || text === '/alarm') {
           await handleAlarmStatus(chatId);
+        } else if (text === '📝 Дедлайни' || text === '/deadlines' || text === '/tasks') {
+          await handleShowDeadlines(chatId);
+        } else if (text.startsWith('/add') || text.startsWith('/task')) {
+          await handleAddDeadline(chatId, text, from);
+        } else if (text.startsWith('/done') || text.startsWith('/del')) {
+          await handleDeleteDeadline(chatId, text);
+        } else if (text === '⚡ Графік світла' || text === '/light') {
+          await handleLight(chatId);
         } else if (text === '🔗 Всі посилання' || text === '/links') {
           await handleAllLinks(chatId);
         } else if (text === '🔔 Сповіщення') {
@@ -603,9 +781,8 @@ async function pollUpdates() {
 }
 
 // Start
-console.log('🚀 Бот розкладу ПІ-51 та моніторингу тривог у Києві запущений!');
+console.log('🚀 Бот розкладу ПІ-51, тривог, дедлайнів та світла запущений!');
 
-// Initialize alarm state immediately
 fetchKyivAlarm().then(st => {
   if (st) {
     lastKyivAlarmState = st.isActive;
