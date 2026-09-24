@@ -300,8 +300,8 @@ const KEYBOARD = {
     [{ text: '🗓 Цей тиждень' }, { text: '🗓 Наступний тиждень' }],
     [{ text: '⏰ Що зараз?' }, { text: '🚨 Статус тривоги' }],
     [{ text: '📝 Дедлайни' }, { text: '📊 Бали РСО' }],
-    [{ text: '🧮 Калькулятор' }, { text: '⚡ Графік світла' }],
-    [{ text: '🔗 Всі посилання' }, { text: '🔔 Сповіщення' }],
+    [{ text: '⚡ Графік світла' }, { text: '🔗 Всі посилання' }],
+    [{ text: '🔔 Сповіщення' }],
   ],
   resize_keyboard: true,
 };
@@ -696,98 +696,6 @@ function normalizeSubject(input) {
   return input.trim().charAt(0).toUpperCase() + input.trim().slice(1);
 }
 
-// Safe Math Expression Evaluator
-function evaluateMath(str) {
-  let s = str.replace(/\s+/g, '').replace(/,/g, '.').replace(/×/g, '*').replace(/÷/g, '/').toLowerCase();
-  let pos = 0;
-  function peek() { return s[pos]; }
-  function get() { return s[pos++]; }
-  function parseExpr() {
-    let val = parseTerm();
-    while (pos < s.length && (peek() === '+' || peek() === '-')) {
-      const op = get();
-      const right = parseTerm();
-      val = op === '+' ? val + right : val - right;
-    }
-    return val;
-  }
-  function parseTerm() {
-    let val = parsePower();
-    while (pos < s.length && (peek() === '*' || peek() === '/' || peek() === '%')) {
-      const op = get();
-      const right = parsePower();
-      if (op === '*') val *= right;
-      else if (op === '/') {
-        if (right === 0) throw new Error('Ділення на нуль неможливе');
-        val /= right;
-      }
-      else val %= right;
-    }
-    return val;
-  }
-  function parsePower() {
-    let val = parseFactor();
-    if (pos < s.length && (peek() === '^' || (s.substr(pos, 2) === '**'))) {
-      if (peek() === '^') get(); else { get(); get(); }
-      const right = parsePower();
-      val = Math.pow(val, right);
-    }
-    return val;
-  }
-  function parseFactor() {
-    if (pos >= s.length) throw new Error('Неочікуваний кінець виразу');
-    if (peek() === '+') { get(); return parseFactor(); }
-    if (peek() === '-') { get(); return -parseFactor(); }
-    if (peek() === '(') {
-      get();
-      const val = parseExpr();
-      if (get() !== ')') throw new Error('Пропущена закриваюча дужка )');
-      return val;
-    }
-    const alphaMatch = s.slice(pos).match(/^[a-z]+/);
-    if (alphaMatch) {
-      const name = alphaMatch[0];
-      pos += name.length;
-      if (name === 'pi') return Math.PI;
-      if (name === 'e') return Math.E;
-      if (peek() === '(') {
-        get();
-        const arg = parseExpr();
-        if (get() !== ')') throw new Error(`Пропущена закриваюча дужка після ${name}`);
-        if (name === 'sqrt') return Math.sqrt(arg);
-        if (name === 'abs') return Math.abs(arg);
-        if (name === 'round') return Math.round(arg);
-        if (name === 'floor') return Math.floor(arg);
-        if (name === 'ceil') return Math.ceil(arg);
-        if (name === 'sin') return Math.sin(arg);
-        if (name === 'cos') return Math.cos(arg);
-        if (name === 'tan') return Math.tan(arg);
-        if (name === 'log' || name === 'ln') return Math.log(arg);
-        if (name === 'log10') return Math.log10(arg);
-        throw new Error(`Невідома функція: ${name}`);
-      }
-      throw new Error(`Невідомий ідентифікатор: ${name}`);
-    }
-    const numMatch = s.slice(pos).match(/^[0-9]+(\.[0-9]+)?/);
-    if (!numMatch) throw new Error(`Очікувалось число: ${s.slice(pos)}`);
-    pos += numMatch[0].length;
-    return parseFloat(numMatch[0]);
-  }
-  const result = parseExpr();
-  if (pos < s.length) throw new Error(`Невідомий символ: ${s[pos]}`);
-  return result;
-}
-
-function isPureMathExpr(text) {
-  const t = text.trim();
-  if (t.length < 3) return false;
-  if (/^\d{1,2}\.\d{1,2}(\.\d{2,4})?$/.test(t)) return false;
-  const isPure = /^[0-9\s\+\-\*\/\^\(\)\.\,\%]+$/.test(t);
-  const hasDigit = /[0-9]/.test(t);
-  const hasOp = /[\+\-\*\/\^]/.test(t);
-  return isPure && hasDigit && hasOp;
-}
-
 async function handleRso(chatId) {
   rsoData = loadRso();
   const userScores = rsoData[chatId];
@@ -987,41 +895,6 @@ async function handleRsoCalc(chatId, text) {
   );
 }
 
-async function handleCalc(chatId, text) {
-  let expr = text.replace(/^\/calc\s*/i, '').trim();
-  if (text === '🧮 Калькулятор') {
-    expr = '';
-  }
-
-  if (!expr) {
-    return sendMessage(
-      chatId,
-      `🧮 *Калькулятор:*\n\n` +
-      `Можна проводити звичайні та інженерні математичні обчислення, або рахувати бали РСО!\n\n` +
-      `🔢 *Швидкі обчислення:* \`/calc <вираз>\`\n` +
-      `• \`/calc 25 * 4 + 15 / 3\`\n` +
-      `• \`/calc sqrt(144) + 2^4\`\n` +
-      `• \`/calc (45 / 60) * 100\`\n` +
-      `• \`/calc sin(pi / 2)\`\n\n` +
-      `💡 _Можна навіть просто відправити математичний приклад типу \`15*4 + 20\`, бот його порахує!_\n\n` +
-      `📊 *Калькулятор балів РСО КПІ:*\n` +
-      `• Кнопка *«📊 Бали РСО»* або команда \`/rso\`\n` +
-      `• \`/rso_calc 48\` — скільки треба до автомату`
-    );
-  }
-
-  try {
-    const res = evaluateMath(expr);
-    let formatted = Number.isInteger(res) ? String(res) : String(Math.round(res * 10000) / 10000);
-    return sendMessage(
-      chatId,
-      `🧮 *Результат:* \`${expr}\` = *${formatted}*`
-    );
-  } catch (err) {
-    return sendMessage(chatId, `⚠️ Помилка у виразі: ${err.message}`);
-  }
-}
-
 // Light & DTEK Info Handler for Vyshhorod (Line 6.2)
 async function handleLight(chatId) {
   const text = 
@@ -1207,7 +1080,6 @@ async function pollUpdates() {
             `🚨 *Моніторинг повітряних тривог Києва* у реальному часі\n` +
             `📝 *Трекер дедлайнів по лабам* (\`/add 29.09 Назва\`)\n` +
             `📊 *Калькулятор балів РСО КПІ* (\`/rso\` або \`/rso_add\`)\n` +
-            `🧮 *Інженерний калькулятор* (\`/calc 25*4\` або прямий вираз)\n` +
             `⚡ *Графік світла* (м. Вишгород, черга 6.2)\n` +
             `🌅 Ранковий дайджест о 07:45 зі списком пар та дедлайнів!\n\n` +
             `Тисни на кнопки внизу для перевірки! 👇`
@@ -1241,10 +1113,6 @@ async function pollUpdates() {
           await handleDelRso(chatId, text);
         } else if (text.startsWith('/rso_calc')) {
           await handleRsoCalc(chatId, text);
-        } else if (text === '🧮 Калькулятор' || text === '/calc' || text.startsWith('/calc ')) {
-          await handleCalc(chatId, text);
-        } else if (isPureMathExpr(text)) {
-          await handleCalc(chatId, `/calc ${text}`);
         } else if (text === '⚡ Графік світла' || text === '/light') {
           await handleLight(chatId);
         } else if (text === '🔗 Всі посилання' || text === '/links') {
