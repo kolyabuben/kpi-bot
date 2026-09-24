@@ -791,7 +791,7 @@ async function pollUpdates() {
             const handle = uName ? ` (@${uName})` : '';
             sendMessage(
               '1277111400',
-              `👋 *Новий користувач запустив бота!*\n\n👤 *${from}*${handle}\n🆔 ID: \`${chatId}\`\n\n_Віка або Женя на зв'язку!_`
+              `👋 *Новий користувач запустив бота!*\n\n👤 *${from}*${handle}\n🆔 ID: \`${chatId}\``
             ).catch(() => {});
           }
         }
@@ -846,37 +846,6 @@ async function pollUpdates() {
             chatId,
             `👥 *Користувачі бота (всього: ${Object.keys(subscribers).length}):*\n\n${list || 'Поки що немає даних.'}`
           );
-        } else if (text === '/vika' || text.toLowerCase() === 'віка' || text.toLowerCase() === 'вика') {
-          const jokes = [
-            "💅 Віка вже зайшла в Zoom за 15 хвилин до пари і питає, де всі.",
-            "📚 Інсайд: конспекти Вікі на чорному ринку КПІ коштують дорожче за біткоїн.",
-            "⚡ Вчені довели: якщо Віка не здала лабу першою, значить викладач ще не придумав завдання.",
-            "☕ Віка слухає лекцію, п'є каву і одночасно закриває дедлайни за весь семестр.",
-            "🥇 Віка — головний постачальник заліків та спокою для всієї групи ПІ-51!"
-          ];
-          const randomJoke = jokes[Math.floor(Math.random() * jokes.length)];
-          await sendMessage(chatId, `🌸 *Хвилинка поваги до Вікі:*\n\n${randomJoke}`);
-        } else if (text === '/zhenya' || text.toLowerCase() === 'женя') {
-          const jokes = [
-            "😴 Женя ще спить, але ментально він уже на четвертій парі в Zoom з вимкненою камерою.",
-            "⏰ Будильник Жені дзвонить о 08:29 на пару о 08:30. І він все одно встигає!",
-            "💻 Женя не пише баги в коді, це офіційні недокументовані фічі від Маркіна.",
-            "🎮 Женя сказав, що підтягує англійську виключно через голосовий чат у CS2.",
-            "🧠 Женя підключається до лекції, пише «+» у чат і зникає у священну тишу до кінця пари."
-          ];
-          const randomJoke = jokes[Math.floor(Math.random() * jokes.length)];
-          await sendMessage(chatId, `⚡ *Хвилинка Жені:*\n\n${randomJoke}`);
-        } else if (text === '/who' || text.toLowerCase() === 'хто' || text.toLowerCase() === 'кто') {
-          const options = [
-            "😴 *Хто сьогодні проспав першу пару?* ➔ Женя (без варіантів)",
-            "📚 *Хто сьогодні рятує групу конспектами?* ➔ Віка (як завжди)",
-            "😎 *Хто сьогодні тримає весь цей двіж?* ➔ 6u6en",
-            "☕ *Хто сьогодні п'є найбільше кави на парах?* ➔ Віка",
-            "🎮 *Хто сьогодні здав лабу, навіть не відкриваючи методичку?* ➔ Женя",
-            "🚀 *Хто найкращий студент групи ПІ-51?* ➔ Вся ваша банда!"
-          ];
-          const pick = options[Math.floor(Math.random() * options.length)];
-          await sendMessage(chatId, `🎲 *Рандомний вердикт дня:*\n\n${pick}`);
         } else if (text === '🔔 Сповіщення') {
           const current = subscribers[chatId]?.notifications !== false;
           subscribers[chatId].notifications = !current;
