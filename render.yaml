@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: kpi-bot
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node bot.js
